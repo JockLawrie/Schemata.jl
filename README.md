@@ -5,9 +5,10 @@ A `Schema` is a specification of a data set.
 
 It exists independently of any particular data set. That is, it can be constructed and modified in the absence of a data set.
 
-A data set can be compared to a schema and a list of non-compliance issues returned.
+This package supports 2 main operations:
 
-A data set can be compared to a schema, modified where possible to comply with the schema, and a list of remaining non-compliance issues returned.
+1. A data set can be compared to a schema and a list of non-compliance issues returned.
+2. A data set can be compared to a schema, modified where possible to comply with the schema, and a list of remaining non-compliance issues returned.
 
 
 # Basic Usage

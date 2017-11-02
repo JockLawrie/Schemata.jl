@@ -1,0 +1,34 @@
+sales:
+    type: schema
+    tables:
+        customers:
+            description: Customer information
+            primarykey: customer_id
+            columns:
+                customer_id:
+                    description: Unique customer ID (encoded)
+                    datatype: Int
+                    unique: true
+                    nullable: false
+                dob:
+                    description: Date of birth
+                    datatype: {datatype: Date, format: "Y-m-d"}
+                    unique: false
+                    nullable: false
+                    support: "1910-01-01:yesterday"
+                gender:
+                    description: Gender
+                    datatype: Char
+                    unique: false
+                    nullable: false
+                    support: ['m', 'f']
+
+
+actions:  # Specifies how to convert data source/s into a data set that respects a given schema
+    sales:
+        schema: sales
+        tables:
+            customers:
+                data_source: {filename: customers.tsv}
+                columns:
+                    customer_id: {pre_transforms: {rename_from: customer_key}, post_transforms: {encode: true}}
