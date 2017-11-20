@@ -1,3 +1,19 @@
+struct Schema
+    name::Symbol
+    tables::Vector{TableSchema}
+end
+
+
+struct TableSchema
+    name::Symbol
+    description::String
+    columns::Vector{ColumnSchema}
+    primary_key::Vector{ColumnSchema}
+    intra_row_constraints::Vector{Function}  # Constraints between columns within a row (e.g., marriage date > birth date)
+    inter_row_constraints::Vector{Function}  # Constraints between rows (e.g., a person can have only 1 birth date)
+end
+
+
 struct ColumnSchema
     name::Symbol
     description::String
@@ -10,16 +26,8 @@ struct ColumnSchema
 end
 
 
-struct TableSchema
-    name::Symbol
-    description::String
-    columns::Vector{Column}
-    primary_key::Vector{Column}
-    intra_row_constraints::Vector{Function}  # Constraints between columns within a row (e.g., marriage date > birth date)
-    inter_row_constraints::Vector{Function}  # Constraints between rows (e.g., a person can have only 1 birth date)
-end
 
-
+#=
 struct Join
     table1::TableSchema
     table2::TableSchema
@@ -34,3 +42,4 @@ struct MultiTableSchema
     intra_row_constraints::Vector{Function}  # Constraints between columns within a row (e.g., tbl1.marriage_date > tbl2.birth_date)
     inter_row_constraints::Vector{Function}  # Constraints between rows (e.g., a person can have only 1 birth date)
 end
+=#

@@ -1,15 +1,16 @@
 module Schema
 
 
-export ColumnSchema, TableSchema, Join, MultiTableSchema
-       diagnose!, enforce_schema, enforce_schema!
+export ColumnSchema, TableSchema
+#       diagnose!, enforce_schema, enforce_schema!
+       #Join, MultiTableSchema
 
 
 using DataFrames
 
 include("types.jl")
 
-
+#=
 "Returns: A schema-compliant table with dimensions that of indata and cells filled with nulls."
 function init_compliant_data(indata, schema::TableSchema)
     outdata = DataFrame()
@@ -46,6 +47,7 @@ function delete_issue!(issues::Dict{Int, String}, i::String, issue::String)
     pop!(issues[i], issue)
     isempty(issues[i]) && delete!(issues, i)
 end
+=#
 
 
 end
