@@ -4,45 +4,62 @@ using DataFrames
 
 
 ################################################################################
-### Basic schema
-cs = ColumnSchema(:customer_id, "Customer ID", Int, !CATEGORICAL, !CATS_ORDERED, IS_REQUIRED, IS_UNIQUE, 1:1_000_000)
-ts = TableSchema(:mytable, "My table", [cs], [:customer_id], Function[], Function[])
+### Test constructors 
+cs = ColumnSchema(:customer_id, "Customer ID", Int, !CATEGORICAL, IS_REQUIRED, IS_UNIQUE, 1:1_000_000)
+ts = TableSchema(:mytable, "My table", [cs], [:customer_id])
 schema = Schema(:myschema, [ts])
 
-@test_throws ErrorException ColumnSchema(:customer_id, "Customer ID", Int, false, false, true, true, UInt)      # Int != UInt
-@test_throws ErrorException TableSchema(:mytable, "My table", [cs], [:XXXcustomer_id], Function[], Function[])  # primary_key non-existent
+@test_throws ErrorException ColumnSchema(:customer_id, "Customer ID", Int, !CATEGORICAL, IS_REQUIRED, IS_UNIQUE, UInt)     # Int != UInt
+@test_throws ErrorException ColumnSchema(:new, "Customer is new", Char, CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, ["y", "n"])  # Char != String
+@test_throws ErrorException TableSchema(:mytable, "My table", [cs], [:XXXcustomer_id])  # primary_key non-existent
 
 
 ################################################################################
 ### Compare DataFrame to Schema
 
 # Schema
-patientid = ColumnSchema(:patientid, "Patient ID",  UInt,   !CATEGORICAL, !CATS_ORDERED, IS_REQUIRED,  IS_UNIQUE, UInt)
-age       = ColumnSchema(:age,       "Age (years)", UInt,   !CATEGORICAL, !CATS_ORDERED, IS_REQUIRED, !IS_UNIQUE, UInt)
-gender    = ColumnSchema(:gender,    "Gender",      Char,    CATEGORICAL, !CATS_ORDERED, IS_REQUIRED, !IS_UNIQUE, Set(['m', 'f']))
-dose      = ColumnSchema(:dose,      "Dose size",   String,  CATEGORICAL,  CATS_ORDERED, IS_REQUIRED, !IS_UNIQUE, String)
-fever     = ColumnSchema(:fever,     "Had fever",   Bool,    CATEGORICAL, !CATS_ORDERED, IS_REQUIRED, !IS_UNIQUE, Bool)
-ts     = TableSchema(:mytable, "My table", [patientid, age, gender, dose, fever], [:patientid], Function[], Function[])
+patientid = ColumnSchema(:patientid, "Patient ID",  UInt,   !CATEGORICAL, IS_REQUIRED,  IS_UNIQUE, UInt)
+age       = ColumnSchema(:age,       "Age (years)", Int,    !CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, Int)
+dose      = ColumnSchema(:dose,      "Dose size",   String,  CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, ["small", "medium", "large"])
+fever     = ColumnSchema(:fever,     "Had fever",   Bool,    CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, Bool)
+ts     = TableSchema(:mytable, "My table", [patientid, age, dose, fever], [:patientid])
 schema = Schema(:myschema, [ts])
 
-@test_throws ErrorException ColumnSchema(:gender, "Gender", Char, CATEGORICAL, !CATS_ORDERED, IS_REQUIRED, !IS_UNIQUE, Set(["m", "f"]))  # Char != String
-pid2 = ColumnSchema(:patientid, "Patient ID", UInt, !CATEGORICAL, !CATS_ORDERED, !IS_REQUIRED, IS_UNIQUE, UInt)
-@test_throws ErrorException TableSchema(:mytable, "My table", [patientid, age, gender, dose, fever], [:pid2], Function[], Function[])
+pid2 = ColumnSchema(:pid2, "Patient ID", UInt, !CATEGORICAL, !IS_REQUIRED, IS_UNIQUE, UInt)
+@test_throws ErrorException TableSchema(:mytable, "My table", [pid2, age, dose, fever], [:pid2])  # Primary key not unique
 
 # DataFrame
 tbl = DataFrame(
     patientid = [1, 2, 3, 4],
     age       = [11, 22, 33, 444],
-    gender    = ['f', 'm', 'f', 'm'],
     dose      = ["small", "medium", "large", "medium"],
-    fever     = ["no", "yes", "yes", "no"]
+    fever     = [false, true, true, false]
 )
 
-#=
-# Compare
-diagnose!(tbl, schema)  # No issues
-# Change schema: Forbid tbl[:age] having values of 120 or above
-diagnose!(tbl, schema)  # 1 issue: Probably a data entry error
+# Compare data to schema
+issues = diagnose(tbl, schema, :mytable)
+diagnose(tbl, schema.tables[1])
+diagnose(tbl, schema)
+@test size(issues, 1) == 3
+
+# Modify data to comply with the schema
+pool!(tbl, [:dose, :fever])  # Ensure :dose and :fever contain categorical data
+issues = diagnose(tbl, schema, :mytable)
+@test size(issues, 1) == 1
+
+tbl[:patientid] = convert(DataArray{UInt}, tbl[:patientid])
+issues = diagnose(tbl, schema, :mytable)
+@test size(issues, 1) == 0
+
+# Modify schema: Forbid tbl[:age] having values of 120 or above
+age = ColumnSchema(:age, "Age (years)", Int, !CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, 0:120)
+ts  = schema.tables[1]
+ts.columns[2] = age
+
+# Compare again
+issues = diagnose(tbl, schema, :mytable)
+@test size(issues, 1) == 1
+
 tbl[4, :age] = 44       # Fix data entry error
-diagnose!(tbl, schema)  # No issues
-=#
+issues = diagnose(tbl, schema, :mytable)
+@test size(issues, 1) == 0

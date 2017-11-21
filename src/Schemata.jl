@@ -1,15 +1,15 @@
 module Schemata
 
 
-export CATEGORICAL, CATS_ORDERED, IS_REQUIRED, IS_UNIQUE,  # constants
-       Schema, TableSchema, ColumnSchema                   # types
-#       diagnose!, enforce_schema, enforce_schema!
-       #Join, MultiTableSchema
+export CATEGORICAL, IS_REQUIRED, IS_UNIQUE,  # constants
+       Schema, TableSchema, ColumnSchema,    # types
+       diagnose                              # functions
+#       enforce_schema, enforce_schema!
+       #Join
 
 
 # Some constants for convenience
 const CATEGORICAL  = true
-const CATS_ORDERED = true
 const IS_REQUIRED  = true
 const IS_UNIQUE    = true
 
@@ -17,6 +17,8 @@ const IS_UNIQUE    = true
 using DataFrames
 
 include("types.jl")
+include("diagnose.jl")
+
 
 #=
 "Returns: A schema-compliant table with dimensions that of indata and cells filled with nulls."
