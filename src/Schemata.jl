@@ -1,11 +1,19 @@
-module Schema
+module Schemata
 
 
-export ColumnSchema, TableSchema
+export CATEGORICAL, CATS_ORDERED, IS_REQUIRED, IS_UNIQUE,  # constants
+       Schema, TableSchema, ColumnSchema                   # types
 #       diagnose!, enforce_schema, enforce_schema!
        #Join, MultiTableSchema
 
 
+# Some constants for convenience
+const CATEGORICAL  = true
+const CATS_ORDERED = true
+const IS_REQUIRED  = true
+const IS_UNIQUE    = true
+
+# Dependencies
 using DataFrames
 
 include("types.jl")

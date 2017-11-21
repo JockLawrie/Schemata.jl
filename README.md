@@ -1,4 +1,4 @@
-# Schema.jl
+# Schemata.jl
 
 
 A `Schema` is a specification of a data set.
@@ -16,7 +16,7 @@ This package supports 2 main operations:
 
 ```julia
 using DataFrames
-using Schema
+using Schemata
 
 ### Example 1
 schema = xxx  # Schema defined before data is seen
