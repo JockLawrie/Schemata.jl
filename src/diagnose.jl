@@ -65,7 +65,7 @@ function table_level_issues!(issues, tbl, tbl_schema::TableSchema)
 
     # Ensure that the primary key is unique
     if isempty(setdiff(Set(tbl_schema.primary_key), colnames_data))  # Primary key cols exist in the data
-        pk = unique!(tbl[:, tbl_schema.primary_key])
+        pk = unique(tbl[:, tbl_schema.primary_key])
         if size(pk, 1) != size(tbl, 1)
             insert_issue!(issues, ("table",tblname), "Primary key not unique.")
         end
@@ -78,9 +78,9 @@ function column_level_issues!(issues, tbl, columns::Dict{Symbol, ColumnSchema}, 
     for colname in names(tbl)
         # Collect basic column info
         !haskey(columns, colname) && continue  # This problem is detected at the table level
-        schema = columns[colname]
-        data   = tbl[colname]
-        cm     = countmap(data)
+        schema    = columns[colname]
+        data      = tbl[colname]
+        vals      = Set(data)
         validvals = schema.valid_values
 
         # Ensure correct eltype
@@ -94,12 +94,12 @@ function column_level_issues!(issues, tbl, columns::Dict{Symbol, ColumnSchema}, 
         end
 
         # Ensure no missing data
-        if schema.is_required && haskey(cm, NA)
+        if schema.is_required && in(NA, vals)
             insert_issue!(issues, ("column", "$tblname.$colname"), "Missing data not allowed.")
         end
 
         # Ensure unique data
-        if schema.is_unique && length(cm) < size(data, 1)
+        if schema.is_unique && length(vals) < size(data, 1)
             insert_issue!(issues, ("column", "$tblname.$colname"), "Values are not unique.")
         end
 
@@ -108,7 +108,7 @@ function column_level_issues!(issues, tbl, columns::Dict{Symbol, ColumnSchema}, 
         tp = typeof(validvals)
         invalid_values = Set{schema.eltyp}()
         if tp <: Vector || tp <: Range  # eltype(valid_values) has implicitly been checked via the eltype check
-            for (val, n) in cm
+            for val in vals
                 isna(val) && continue
                 if !in(val, validvals)
                     push!(invalid_values, val)

@@ -19,8 +19,6 @@ This package supports 2 main operations:
 using DataFrames
 using Schemata
 
-### Example 1
-
 # Schema
 patientid = ColumnSchema(:patientid, "Patient ID",  UInt,   !CATEGORICAL, IS_REQUIRED,  IS_UNIQUE, UInt)
 age       = ColumnSchema(:age,       "Age (years)", Int,    !CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, Int)
