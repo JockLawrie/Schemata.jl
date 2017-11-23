@@ -88,3 +88,5 @@ tbl2
 3. Implement `intrarow_constraints` for `TableSchema`.
 
 4. Define joins between tables within a schema, as well as intrarow_constraints across tables.
+
+5. Infer a simple `Schema` from a given data table.

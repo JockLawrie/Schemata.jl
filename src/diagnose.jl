@@ -1,5 +1,8 @@
 """
-Returns: DataFrame containing ways in which the table does not comply with the schema.
+Returns: Collection containing ways in which the table does not comply with the schema.
+
+Default collection is a vector of tuples.
+If DataFrames is defined the collection is a DataFrame.
 
 Example result:
 
@@ -34,26 +37,26 @@ function diagnose{T}(data::Dict{Symbol, T}, schema::Schema)
 end
 
 
-function diagnose(tbl, tbl_schema::TableSchema)
-    data   = Dict(tbl_schema.name => tbl)
-    schema = Schema(:xxx, "", [tbl_schema])
+function diagnose(tbl, tblschema::TableSchema)
+    data   = Dict(tblschema.name => tbl)
+    schema = Schema(:xxx, "", [tblschema])
     diagnose(data, schema)
 end
 
 
 "Modified: issues"
-function diagnose_table!(issues, tbl, tbl_schema::TableSchema)
-    table_level_issues!(issues, tbl, tbl_schema)
-    column_level_issues!(issues, tbl, tbl_schema.columns, String(tbl_schema.name))
+function diagnose_table!(issues, tbl, tblschema::TableSchema)
+    table_level_issues!(issues, tbl, tblschema)
+    column_level_issues!(issues, tbl, tblschema.columns, String(tblschema.name))
 end
 
 
 "Append table-level issues into issues."
-function table_level_issues!(issues, tbl, tbl_schema::TableSchema)
+function table_level_issues!(issues, tbl, tblschema::TableSchema)
     # Ensure the set of columns in the data matches that in the schema
-    tblname         = String(tbl_schema.name)
+    tblname         = String(tblschema.name)
     colnames_data   = Set(names(tbl))
-    colnames_schema = Set(tbl_schema.col_order)
+    colnames_schema = Set(tblschema.col_order)
     cols = setdiff(colnames_data, colnames_schema)
     if length(cols) > 0
         insert_issue!(issues, ("table",tblname), "Data has columns that the schema doesn't have ($(cols)).")
@@ -64,8 +67,8 @@ function table_level_issues!(issues, tbl, tbl_schema::TableSchema)
     end
 
     # Ensure that the primary key is unique
-    if isempty(setdiff(Set(tbl_schema.primary_key), colnames_data))  # Primary key cols exist in the data
-        pk = unique(tbl[:, tbl_schema.primary_key])
+    if isempty(setdiff(Set(tblschema.primary_key), colnames_data))  # Primary key cols exist in the data
+        pk = unique(tbl[:, tblschema.primary_key])
         if size(pk, 1) != size(tbl, 1)
             insert_issue!(issues, ("table",tblname), "Primary key not unique.")
         end
@@ -78,35 +81,35 @@ function column_level_issues!(issues, tbl, columns::Dict{Symbol, ColumnSchema}, 
     for colname in names(tbl)
         # Collect basic column info
         !haskey(columns, colname) && continue  # This problem is detected at the table level
-        schema    = columns[colname]
-        data      = tbl[colname]
-        vals      = Set(data)
-        validvals = schema.valid_values
+        colschema = columns[colname]
+        coldata   = tbl[colname]
+        vals      = Set(coldata)
+        validvals = colschema.valid_values
 
         # Ensure correct eltype
-        if eltype(data) != schema.eltyp
-            insert_issue!(issues, ("column", "$tblname.$colname"), "Data has eltype $(eltype(data)), schema requires $(schema.eltyp).")
+        if eltype(coldata) != colschema.eltyp
+            insert_issue!(issues, ("column", "$tblname.$colname"), "Data has eltype $(eltype(coldata)), schema requires $(colschema.eltyp).")
         end
 
         # Ensure categorical
-        if schema.is_categorical && !(typeof(data) <: DataArrays.PooledDataArray)
+        if colschema.is_categorical && !(typeof(coldata) <: DataArrays.PooledDataArray)
             insert_issue!(issues, ("column", "$tblname.$colname"), "Data is not categorical.")
         end
 
         # Ensure no missing data
-        if schema.is_required && in(NA, vals)
+        if colschema.is_required && in(NA, vals)
             insert_issue!(issues, ("column", "$tblname.$colname"), "Missing data not allowed.")
         end
 
         # Ensure unique data
-        if schema.is_unique && length(vals) < size(data, 1)
+        if colschema.is_unique && length(vals) < size(coldata, 1)
             insert_issue!(issues, ("column", "$tblname.$colname"), "Values are not unique.")
         end
 
         # Ensure valid values
-        eltype(data) != schema.eltyp && continue  # Only do this check if the data type is valid
+        eltype(coldata) != colschema.eltyp && continue  # Only do this check if the data type is valid
         tp = typeof(validvals)
-        invalid_values = Set{schema.eltyp}()
+        invalid_values = Set{colschema.eltyp}()
         if tp <: Vector || tp <: Range  # eltype(valid_values) has implicitly been checked via the eltype check
             for val in vals
                 isna(val) && continue
