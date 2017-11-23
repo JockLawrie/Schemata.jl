@@ -83,7 +83,7 @@ function column_level_issues!(issues, tbl, columns::Dict{Symbol, ColumnSchema}, 
         !haskey(columns, colname) && continue  # This problem is detected at the table level
         colschema = columns[colname]
         coldata   = tbl[colname]
-        vals      = Set(coldata)
+        vals      = Set{Any}(coldata)  # Type qualifier {Any} allows NAs to be a member of the set
         validvals = colschema.valid_values
 
         # Ensure correct eltype
@@ -119,6 +119,7 @@ function column_level_issues!(issues, tbl, columns::Dict{Symbol, ColumnSchema}, 
             end
             if !isempty(invalid_values)
                 invalid_values = [x for x in invalid_values]  # Convert Set to Vector
+                sort!(invalid_values)
                 insert_issue!(issues, ("column", "$tblname.$colname"), "Invalid values: $(invalid_values)")
             end
         end

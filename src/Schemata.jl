@@ -8,7 +8,7 @@ const CATEGORICAL = true
 const IS_REQUIRED = true
 const IS_UNIQUE   = true
 
-using DataArrays  # Replace with Missings (or Base.Missings if applicable) when possible
+using DataFrames
 
 include("types.jl")
 include("diagnose.jl")

@@ -25,7 +25,7 @@ age       = ColumnSchema(:age,       "Age (years)", Int,    !CATEGORICAL, IS_REQ
 dose      = ColumnSchema(:dose,      "Dose size",   String,  CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, ["small", "medium", "large"])
 fever     = ColumnSchema(:fever,     "Had fever",   Bool,    CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, Bool)
 ts        = TableSchema(:mytable, "My table", [patientid, age, dose, fever], [:patientid])
-schema    = Schema(:myschema, [ts])
+schema    = Schema(:fever, "Fever schema", [ts])
 
 # Data
 tbl = DataFrame(
@@ -49,19 +49,23 @@ diagnose(tbl, schema.tables[:mytable])
 schema.tables[:mytable].columns[:age].valid_values = 0:120
 
 # Compare again
+diagnose(tbl, schema.tables[:mytable])  # Looks like a data entry error
+
+# Fix data: Attempt 1 (do not set invalid values to NA)
+tbl, issues = enforce_schema(tbl, schema.tables[:mytable], false);
+tbl
+issues
+
+# Fix data: Attempt 2 (set invalid values to NA)
+tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
+tbl
+issues
+
+# Fix data: Attmept 3 (manually fix data entry error)
+tbl[4, :age] = 44
 diagnose(tbl, schema.tables[:mytable])
 
-# Fix remaining data issue
-tbl[4, :age] = 44  # Fix data entry error
-diagnose(tbl, schema.tables[:mytable])
 
-
-### Example 2
-tbl[4, :age] = 9999
-diagnose(tbl, schema)  # 1 issue
-tbl, issues = enforce_schema(tbl, schema; exclude_invalid_values=true);  # Set invalid values to null
-tbl     # Non-compliant value was set to null
-issues  # No issues remaining
 
 
 ### Example 3
