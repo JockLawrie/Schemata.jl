@@ -30,7 +30,7 @@ function diagnose{T}(data::Dict{Symbol, T}, schema::Schema)
         !haskey(data, tblname) && continue
         diagnose_table!(issues, data[tblname], tblschema)
     end
-    issues_to_dataframe(issues)
+    format_issues(issues)
 end
 
 
@@ -49,7 +49,7 @@ end
 
 
 "Append table-level issues into issues."
-function table_level_issues!(issues, tbl::DataFrame, tbl_schema::TableSchema)
+function table_level_issues!(issues, tbl, tbl_schema::TableSchema)
     # Ensure the set of columns in the data matches that in the schema
     tblname         = String(tbl_schema.name)
     colnames_data   = Set(names(tbl))
@@ -74,7 +74,7 @@ end
 
 
 "Append table-level issues into issues."
-function column_level_issues!(issues, tbl::DataFrame, columns::Dict{Symbol, ColumnSchema}, tblname::String)
+function column_level_issues!(issues, tbl, columns::Dict{Symbol, ColumnSchema}, tblname::String)
     for colname in names(tbl)
         # Collect basic column info
         !haskey(columns, colname) && continue  # This problem is detected at the table level
@@ -132,12 +132,40 @@ function insert_issue!(issues::Dict{Tuple{String, String}, Set{String}}, k::Tupl
 end
 
 
-function issues_to_dataframe(issues)
-    n = 0
+function format_issues(issues)
+    # Count number of issues
+    nissues = 0
     for (ety_id, issue_set) in issues
-        n += length(issue_set)
+        nissues += length(issue_set)
     end
-    result = DataFrame(entity = DataArray(String, n), id = DataArray(String, n), issue = DataArray(String, n))
+
+    # Construct result
+    result = issues
+    if isdefined(Main, :DataFrame)
+        result = issues_to_dataframe(issues, nissues)
+    else
+        result = issues_to_vector(issues, nissues)
+    end
+    result
+end
+
+
+function issues_to_vector(issues, nissues::Int)
+    result = fill(("","",""), nissues)
+    i = 0
+    for (ety_id, issue_set) in issues
+        for iss in issue_set
+            i += 1
+            result[i] = (ety_id[1], ety_id[2], iss)
+        end
+    end
+    sort!(result)
+end
+
+
+function issues_to_dataframe(issues, nissues::Int)
+    m = Main
+    result = m.DataFrame(entity = m.DataArray(String, nissues), id = m.DataArray(String, nissues), issue = m.DataArray(String, nissues))
     i = 0
     for (ety_id, issue_set) in issues
         for iss in issue_set

@@ -53,7 +53,7 @@ schema.tables[:mytable].columns[:age].valid_values = 0:120
 # Compare again
 diagnose(tbl, schema.tables[:mytable])
 
-# Fix remaining issue
+# Fix remaining data issue
 tbl[4, :age] = 44  # Fix data entry error
 diagnose(tbl, schema.tables[:mytable])
 
@@ -78,14 +78,6 @@ issues  # 1 issue remaining (tbl[4, :zip] can't be parsed as Int)
 tbl[4, :zip] = null # issue fixed
 issues = enforce_schema!(tbl2, tbl, schema; exclude_invalid_values=true)  # No issues remaining
 tbl2
-
-
-### Example 4
-primary_key constraint
-
-
-### Example 5
-intrarow_constraint...people under 18 can't have a large dose
 ```
 
 
