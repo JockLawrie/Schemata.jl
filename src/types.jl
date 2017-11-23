@@ -1,4 +1,4 @@
-struct ColumnSchema
+mutable struct ColumnSchema
     name::Symbol
     description::String
     eltyp::DataType        # The type of each value in the column
@@ -19,29 +19,46 @@ struct ColumnSchema
 end
 
 
+################################################################################
 struct TableSchema
     name::Symbol
     description::String
-    columns::Vector{ColumnSchema}
+    columns::Dict{Symbol, ColumnSchema}     # colname => col_schema
+    col_order::Vector{Symbol}               # Determines the order of the columns
     primary_key::Vector{Symbol}             # vector of column names
     intrarow_constraints::Vector{Function}  # Constraints between columns within a row (e.g., marriage date > birth date)
 
-    function TableSchema(name, description, columns, primary_key, intrarow_constraints)
-        colnames = Dict(col.name => col for col in columns)
+    function TableSchema(name, description, columns, col_order, primary_key, intrarow_constraints)
         for colname in primary_key
-            !haskey(colnames, colname) && error("Table :$name. Primary key has a non-existent column ($colname).")
-            colschema = colnames[colname]
-            !colschema.is_required     && error("Table :$name. Primary key has a column ($colname) that allows missing data.")
+            !haskey(columns, colname) && error("Table :$name. Primary key has a non-existent column ($colname).")
+            colschema = columns[colname]
+            !colschema.is_required    && error("Table :$name. Primary key has a column ($colname) that allows missing data.")
         end
-        new(name, description, columns, primary_key, intrarow_constraints)
+        new(name, description, columns, col_order, primary_key, intrarow_constraints)
     end
 end
-TableSchema(name, description, columns, primary_key) = TableSchema(name, description, columns, primary_key, Function[]) 
 
 
+function TableSchema(name, description, columns::Vector{ColumnSchema}, primary_key)
+    col_order = [col.name for col in columns]
+    columns   = Dict(col.name => col for col in columns)
+    TableSchema(name, description, columns, col_order, primary_key, Function[]) 
+end
+
+
+################################################################################
 struct Schema
     name::Symbol
-    tables::Vector{TableSchema}
+    description::String
+    tables::Dict{Symbol, TableSchema}  # table_name => table_schema
+    tbl_order::Vector{Symbol}          # Determines the order of the tables
+end
+
+
+function Schema(name, description, tables::Vector{TableSchema})
+    tbl_order = [tbl.name for tbl in tables]
+    tables    = Dict(tbl.name => tbl for tbl in tables)
+    Schema(name, description, tables, tbl_order)
 end
 
 

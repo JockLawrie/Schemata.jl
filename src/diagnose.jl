@@ -10,11 +10,41 @@ Example result:
    col      gender     Invalid values ('d')
    table    mytable    Primary key not unique
 """
-function diagnose(tbl::DataFrame, tbl_schema::TableSchema)
+function diagnose{T}(data::Dict{Symbol, T}, schema::Schema)
     issues = Dict{Tuple{String, String}, Set{String}}()  # (entity, id) => Set(issue1, issue2, ...)
+
+    # Ensure that the set of tables in the data matches that in the schema
+    tblnames_data   = Set(keys(data))
+    tblnames_schema = Set(keys(schema.tables))
+    tbls = setdiff(tblnames_data, tblnames_schema)
+    if length(tbls) > 0
+        insert_issue!(issues, ("dataset",""), "Dataset has tables that the schema doesn't have ($(tbls)).")
+    end
+    tbls = setdiff(tblnames_schema, tblnames_data)
+    if length(tbls) > 0
+        insert_issue!(issues, ("dataset",""), "Dataset is missing some tables that the Schema has ($(tbls)).")
+    end
+
+    # Table and column level diagnoses
+    for (tblname, tblschema) in schema.tables
+        !haskey(data, tblname) && continue
+        diagnose_table!(issues, data[tblname], tblschema)
+    end
+    issues_to_dataframe(issues)
+end
+
+
+function diagnose(tbl, tbl_schema::TableSchema)
+    data   = Dict(tbl_schema.name => tbl)
+    schema = Schema(:xxx, "", [tbl_schema])
+    diagnose(data, schema)
+end
+
+
+"Modified: issues"
+function diagnose_table!(issues, tbl, tbl_schema::TableSchema)
     table_level_issues!(issues, tbl, tbl_schema)
     column_level_issues!(issues, tbl, tbl_schema.columns, String(tbl_schema.name))
-    issues_to_dataframe(issues)
 end
 
 
@@ -23,14 +53,14 @@ function table_level_issues!(issues, tbl::DataFrame, tbl_schema::TableSchema)
     # Ensure the set of columns in the data matches that in the schema
     tblname         = String(tbl_schema.name)
     colnames_data   = Set(names(tbl))
-    colnames_schema = Set([cs.name for cs in tbl_schema.columns])
+    colnames_schema = Set(tbl_schema.col_order)
     cols = setdiff(colnames_data, colnames_schema)
     if length(cols) > 0
         insert_issue!(issues, ("table",tblname), "Data has columns that the schema doesn't have ($(cols)).")
     end
     cols = setdiff(colnames_schema, colnames_data)
     if length(cols) > 0
-        insert_issue!(issues, ("table",tblname), "Schema has columns that the data doesn't have ($(cols)).")
+        insert_issue!(issues, ("table",tblname), "Data is missing some columns that the Schema has ($(cols)).")
     end
 
     # Ensure that the primary key is unique
@@ -44,8 +74,7 @@ end
 
 
 "Append table-level issues into issues."
-function column_level_issues!(issues, tbl::DataFrame, columns::Vector{ColumnSchema}, tblname::String)
-    columns = Dict(col.name => col for col in columns)  # colname => col_schema
+function column_level_issues!(issues, tbl::DataFrame, columns::Dict{Symbol, ColumnSchema}, tblname::String)
     for colname in names(tbl)
         # Collect basic column info
         !haskey(columns, colname) && continue  # This problem is detected at the table level
@@ -92,28 +121,6 @@ function column_level_issues!(issues, tbl::DataFrame, columns::Vector{ColumnSche
         end
     end
 end
-
-
-function diagnose(tbl::DataFrame, schema::Schema, tblname::Symbol)
-    tbl_schema = schema.tables[1]
-    ts_found   = false
-    for ts in schema.tables
-        if ts.name == tblname
-            tbl_schema = ts
-            ts_found = true
-            break
-        end
-    end
-    !ts_found && error("Table $tblname is not part of the schema.")
-    diagnose(tbl, tbl_schema)
-end
-
-
-function diagnose(tbl::DataFrame, schema::Schema)
-    length(schema.tables) > 1 && error("Schema has more than 1 TableSchema, please specify which one to compare data to.")
-    diagnose(tbl, schema.tables[1])
-end
-
 
 
 "Init issues[k] if it doesn't already exist, then push msg to issues[k]."

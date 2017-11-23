@@ -8,10 +8,11 @@ It exists independently of any particular data set. That is, it can be construct
 This package supports 2 main operations:
 
 1. A data set can be compared to a schema and a list of non-compliance issues returned.
+
 2. A data set can be compared to a schema, modified where possible to comply with the schema, and a list of remaining non-compliance issues returned.
 
 
-# Basic Usage
+# Usage
 
 
 ```julia
@@ -19,13 +20,42 @@ using DataFrames
 using Schemata
 
 ### Example 1
-schema = xxx  # Schema defined before data is seen
-tbl = DataFrame(age = [11, 22, 33, 444], dose = ["small", "medium", "large", "medium"], fever = ["no", "yes", "yes", "no"])
-diagnose(tbl, schema)  # No issues
-# Change schema: Forbid tbl[:age] having values of 120 or above
-diagnose(tbl, schema)  # 1 issue: Probably a data entry error
-tbl[4, :age] = 44       # Fix data entry error
-diagnose(tbl, schema)  # No issues
+
+# Schema
+patientid = ColumnSchema(:patientid, "Patient ID",  UInt,   !CATEGORICAL, IS_REQUIRED,  IS_UNIQUE, UInt)
+age       = ColumnSchema(:age,       "Age (years)", Int,    !CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, Int)
+dose      = ColumnSchema(:dose,      "Dose size",   String,  CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, ["small", "medium", "large"])
+fever     = ColumnSchema(:fever,     "Had fever",   Bool,    CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, Bool)
+ts        = TableSchema(:mytable, "My table", [patientid, age, dose, fever], [:patientid])
+schema    = Schema(:myschema, [ts])
+
+# Data
+tbl = DataFrame(
+    patientid = [1, 2, 3, 4],
+    age       = [11, 22, 33, 444],
+    dose      = ["small", "medium", "large", "medium"],
+    fever     = [false, true, true, false]
+)
+
+# Compare data to schema
+diagnose(tbl, schema.tables[:mytable])
+
+# Modify data to comply with the schema
+pool!(tbl, [:dose, :fever])                                  # Ensure :dose and :fever contain categorical data
+tbl[:patientid] = convert(DataArray{UInt}, tbl[:patientid])  # Change data type
+
+# Compare again
+diagnose(tbl, schema.tables[:mytable])
+
+# Modify schema: Require :age <= 120
+schema.tables[:mytable].columns[:age].valid_values = 0:120
+
+# Compare again
+diagnose(tbl, schema.tables[:mytable])
+
+# Fix remaining issue
+tbl[4, :age] = 44  # Fix data entry error
+diagnose(tbl, schema.tables[:mytable])
 
 
 ### Example 2
@@ -61,7 +91,7 @@ intrarow_constraint...people under 18 can't have a large dose
 
 # TODO
 
-1. Implement a nicer interface for modifying a `Schema`.
+1. Handle Dates.
 
 2. Read in a `Schema` from a YAML file.
 
