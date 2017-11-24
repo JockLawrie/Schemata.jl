@@ -1,6 +1,5 @@
 # Schemata.jl
 
-
 A `Schema` is a specification of a data set.
 
 It exists independently of any particular data set, and therefore can be constructed and modified in the absence of a data set.
@@ -74,7 +73,7 @@ zipcode = ColumnSchema(:zipcode, "Zip code", Int, CATEGORICAL, !IS_REQUIRED, !IS
 insert_column!(schema.tables[:mytable], zipcode)
 
 # Write the updated schema to disk
-writeschema(joinpath(Pkg.dir("Schemata"), "test/schemata/fever.yaml"), schema)
+# TODO: writeschema(joinpath(Pkg.dir("Schemata"), "test/schemata/fever.yaml"), schema)
 
 # Add a corresponding (non-compliant) column to the data
 tbl[:zipcode] = ["11111", "22222", "33333", "NULL"];  # CSV file was supplied with "NULL" values, forcing eltype to be String.
@@ -89,14 +88,18 @@ issues
 
 # TODO
 
-1. Implement readschema and writeschema.
+1. Implement == for the types.
 
-2. Handle Dates.
+2. Implement writeschema.
 
-3. Implement `intrarow_constraints` for `TableSchema`.
+3. Handle Dates.
 
-4. Define joins between tables within a schema, as well as intrarow_constraints across tables.
+4. Pre and post-enforcement transformations: more power for converting the data you have into the data you want.
 
-5. Infer a simple `Schema` from a given data table.
+5. Implement `intrarow_constraints` for `TableSchema`.
 
-6. Remove dependence on DataFrames?
+6. Define joins between tables within a schema, as well as intrarow_constraints across tables.
+
+7. Infer a simple `Schema` from a given data table.
+
+8. Remove dependence on DataFrames?
