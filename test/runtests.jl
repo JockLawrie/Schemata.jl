@@ -79,7 +79,7 @@ insert_column!(schema.tables[:mytable], zipcode)
 @test schema.tables[:mytable].columns[:zipcode] == zipcode
 
 # Write the updated schema to disk
-#schemafile = joinpath(Pkg.dir("Schemata"), "test/schemata/fever_modified.yaml")
+#schemafile = joinpath(Pkg.dir("Schemata"), "test/schemata/fever_updated.yaml")
 #writeschema(schemafile, schema)
 #schema_from_disk = readschema(schemafile)
 #@test schema == schema_from_disk

@@ -73,7 +73,7 @@ zipcode = ColumnSchema(:zipcode, "Zip code", Int, CATEGORICAL, !IS_REQUIRED, !IS
 insert_column!(schema.tables[:mytable], zipcode)
 
 # Write the updated schema to disk
-# TODO: writeschema(joinpath(Pkg.dir("Schemata"), "test/schemata/fever.yaml"), schema)
+# TODO: writeschema(joinpath(Pkg.dir("Schemata"), "test/schemata/fever_updated.yaml"), schema)
 
 # Add a corresponding (non-compliant) column to the data
 tbl[:zipcode] = ["11111", "22222", "33333", "NULL"];  # CSV file was supplied with "NULL" values, forcing eltype to be String.
@@ -94,7 +94,7 @@ issues
 
 3. Handle Dates.
 
-4. Pre and post-enforcement transformations: more power for converting the data you have into the data you want.
+4. Pre and post-enforcement transformations: more power for converting the data you have into the data you want. Better handled with `DataStreams`?
 
 5. Implement `intrarow_constraints` for `TableSchema`.
 
