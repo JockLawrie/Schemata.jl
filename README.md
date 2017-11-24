@@ -10,7 +10,7 @@ This package facilitates 3 use cases:
 
 2. Compare a data set to a schema and list the non-compliance issues.
 
-3. Transform an existing data set in order to comply with a schema as much as possible (then run the compare function on the result).
+3. Transform an existing data set in order to comply with a schema as much as possible (then rerun the compare function to see any outstanding issues).
 
 
 # Usage
