@@ -3,23 +3,27 @@
 
 A `Schema` is a specification of a data set.
 
-It exists independently of any particular data set. That is, it can be constructed and modified in the absence of a data set.
+It exists independently of any particular data set, and therefore can be constructed and modified in the absence of a data set.
 
-This package supports 2 main operations:
+This package facilitates 3 use cases:
 
-1. A data set can be compared to a schema and a list of non-compliance issues returned.
+1. Read/write a schema from/to a yaml file. Thus schemata are portable, and a change to a schema does not require recompilation.
 
-2. A data set can be compared to a schema, modified where possible to comply with the schema, and a list of remaining non-compliance issues returned.
+2. Compare a data set to a schema and list the non-compliance issues.
+
+3. Transform an existing data set in order to comply with a schema as much as possible (then run the compare function on the result).
 
 
 # Usage
-
 
 ```julia
 using DataFrames
 using Schemata
 
-# Schema
+# Read in the schema
+schema = readschema(joinpath(Pkg.dir("Schemata"), "test/schemata/fever.yaml"))
+
+# Or construct the schema within the code
 patientid = ColumnSchema(:patientid, "Patient ID",  UInt,   !CATEGORICAL, IS_REQUIRED,  IS_UNIQUE, UInt)
 age       = ColumnSchema(:age,       "Age (years)", Int,    !CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, Int)
 dose      = ColumnSchema(:dose,      "Dose size",   String,  CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, ["small", "medium", "large"])
@@ -35,62 +39,64 @@ tbl = DataFrame(
     fever     = [false, true, true, false]
 )
 
-# Compare data to schema
+# Compare the data to the schema
 diagnose(tbl, schema.tables[:mytable])
 
-# Modify data to comply with the schema
+# Modify the data to comply with the schema
 pool!(tbl, [:dose, :fever])                                  # Ensure :dose and :fever contain categorical data
 tbl[:patientid] = convert(DataArray{UInt}, tbl[:patientid])  # Change data type
 
 # Compare again
 diagnose(tbl, schema.tables[:mytable])
 
-# Modify schema: Require :age <= 120
+# Modify the schema: Require :age <= 120
 schema.tables[:mytable].columns[:age].valid_values = 0:120
 
 # Compare again
 diagnose(tbl, schema.tables[:mytable])  # Looks like a data entry error
 
-# Fix data: Attempt 1 (do not set invalid values to NA)
+# Fix the data: Attempt 1 (do not set invalid values to NA)
 tbl, issues = enforce_schema(tbl, schema.tables[:mytable], false);
 tbl
 issues
 
-# Fix data: Attempt 2 (set invalid values to NA)
+# Fix the data: Attempt 2 (set invalid values to NA)
 tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
 tbl
 issues
 
-# Fix data: Attmept 3 (manually fix data entry error)
+# Fix the data: Attempt 3 (manually fix data entry error)
 tbl[4, :age] = 44
 diagnose(tbl, schema.tables[:mytable])
 
+# Add a new column to the schema
+zipcode = ColumnSchema(:zipcode, "Zip code", Int, CATEGORICAL, !IS_REQUIRED, !IS_UNIQUE, 10000:99999)
+insert_column!(schema.tables[:mytable], zipcode)
 
+# Write the updated schema to disk
+writeschema(joinpath(Pkg.dir("Schemata"), "test/schemata/fever.yaml"), schema)
 
+# Add a corresponding (non-compliant) column to the data
+tbl[:zipcode] = ["11111", "22222", "33333", "NULL"];  # CSV file was supplied with "NULL" values, forcing eltype to be String.
+diagnose(tbl, schema.tables[:mytable])
 
-### Example 3
-schema = xxx  # Add zip code
-tbl[4, :age] = 9999
-tbl[:zip]    = ["11111", "22222", "33333", "NULL"];  # CSV file was supplied with "NULL" values, forcing eltype to equal String.
+# Fix the data
+tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
 tbl
-diagnose(tbl, schema)  # 2 issues (tbl[4, :age] and typeof(tbl[:zip]))
-tbl2, issues = enforce_schema(tbl, schema; exclude_invalid_values=true);
-tbl2
-issues  # 1 issue remaining (tbl[4, :zip] can't be parsed as Int)
-tbl[4, :zip] = null # issue fixed
-issues = enforce_schema!(tbl2, tbl, schema; exclude_invalid_values=true)  # No issues remaining
-tbl2
+issues
 ```
 
 
 # TODO
 
-1. Handle Dates.
+1. Implement readschema and writeschema.
 
-2. Read in a `Schema` from a YAML file.
+2. Handle Dates.
 
 3. Implement `intrarow_constraints` for `TableSchema`.
 
 4. Define joins between tables within a schema, as well as intrarow_constraints across tables.
 
 5. Infer a simple `Schema` from a given data table.
+
+6. Remove dependence on DataFrames?

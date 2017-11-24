@@ -2,7 +2,9 @@ module Schemata
 
 export CATEGORICAL, IS_REQUIRED, IS_UNIQUE,  # constants
        Schema, TableSchema, ColumnSchema,    # types
-       diagnose, enforce_schema              # functions
+       #readschema, writeschema,             # functions
+       diagnose, enforce_schema,             # functions
+       insert_column!                        # functions
 
 const CATEGORICAL = true
 const IS_REQUIRED = true

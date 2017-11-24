@@ -56,6 +56,39 @@ schema.tables[:mytable].columns[:age].valid_values = 0:120
 issues = diagnose(tbl, schema.tables[:mytable])
 @test size(issues, 1) == 1
 
-tbl[4, :age] = 44       # Fix data entry error
+# Fix data: Attempt 1
+tbl, issues = enforce_schema(tbl, schema.tables[:mytable], false);
+@test size(issues, 1) == 1
+@test tbl[4, :age] == 444
+
+# Fix data: Attempt 2
+tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
+@test size(issues, 1) == 1
+@test isna(tbl[4, :age]) == true
+
+# Fix data: Attempt 3
+tbl[4, :age] = 44
 issues = diagnose(tbl, schema.tables[:mytable])
+@test size(issues, 1) == 0
+
+# Add a new column to the schema
+zipcode = ColumnSchema(:zipcode, "Zip code", Int, CATEGORICAL, !IS_REQUIRED, !IS_UNIQUE, 10000:99999)
+insert_column!(schema.tables[:mytable], zipcode)
+@test schema.tables[:mytable].col_order[end] == :zipcode
+@test haskey(schema.tables[:mytable].columns, :zipcode)
+@test schema.tables[:mytable].columns[:zipcode] == zipcode
+
+# Write the updated schema to disk
+#schemafile = joinpath(Pkg.dir("Schemata"), "test/schemata/fever_modified.yaml")
+#writeschema(schemafile, schema)
+#schema_from_disk = readschema(schemafile)
+#@test schema == schema_from_disk
+
+# Add a corresponding (non-compliant) column to the data
+tbl[:zipcode] = ["11111", "22222", "33333", "NULL"];  # CSV file was supplied with "NULL" values, forcing eltype to be String.
+issues = diagnose(tbl, schema.tables[:mytable])
+@test size(issues, 1) == 2
+
+# Fix the data
+tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
 @test size(issues, 1) == 0

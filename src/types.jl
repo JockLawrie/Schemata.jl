@@ -69,3 +69,30 @@ struct Join
     columns::Dict{Symbol, Symbol}  # table1.column => table2.column
 end
 =#
+
+################################################################################
+### Methods
+
+"Insert a column into the table schema at position n."
+function insert_column!(tblschema::TableSchema, colschema::ColumnSchema, n::Int=-1)
+    # Collect basic info
+    colname   = colschema.name
+    col_order = tblschema.col_order
+    n = n < 0 ? size(col_order, 1) + 1 : n  # Default: insert column at the end
+
+    # Remove column if it already exists
+    if haskey(tblschema.columns, colname)
+        n = findfirst(col_order, colname)  # new column will be inserted at the same position as the old column
+        splice!(col_order, n)
+    end
+
+    # Insert column
+    tblschema.columns[colname] = colschema
+    if n == size(col_order, 1) + 1     # Insert column at the end
+        push!(col_order, colname)
+    elseif n == 1                      # Insert column at the beginning
+        unshift!(col_order, colname)
+    else
+        splice!(col_order, n:(n-1), colname)
+    end
+end
