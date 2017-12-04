@@ -4,7 +4,11 @@ function readschema(filename::String)
     dct = YAML.load(io)
     close(io)
     length(dct) > 1 && error("File $(filename) contains an incorrectly specified schema.")
+    dict_to_schema(dct)
+end
 
+
+function dict_to_schema(dct::Dict)
     # Get schema-level info
     schema = ""
     schema_name = ""
