@@ -1,5 +1,4 @@
 fever:
-    type: Schema
     description: "Fever schema"
     tables:
         mytable:
