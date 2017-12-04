@@ -39,7 +39,7 @@ end
 
 function diagnose(tbl, tblschema::TableSchema)
     data   = Dict(tblschema.name => tbl)
-    schema = Schema(:xxx, "", [tblschema])
+    schema = Schema(:xxx, "", Dict(tblschema.name => tblschema))
     diagnose(data, schema)
 end
 

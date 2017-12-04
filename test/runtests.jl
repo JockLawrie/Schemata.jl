@@ -7,7 +7,7 @@ using DataFrames
 ### Test constructors 
 cs = ColumnSchema(:customer_id, "Customer ID", Int, !CATEGORICAL, IS_REQUIRED, IS_UNIQUE, 1:1_000_000)
 ts = TableSchema(:mytable, "My table", [cs], [:customer_id])
-schema = Schema(:myschema, "My data set", [ts])
+schema = Schema(:myschema, "My data set", Dict(:mytable => ts))
 
 @test_throws ErrorException ColumnSchema(:customer_id, "Customer ID", Int, !CATEGORICAL, IS_REQUIRED, IS_UNIQUE, UInt)     # Int != UInt
 @test_throws ErrorException ColumnSchema(:new, "Customer is new", Char, CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, ["y", "n"])  # Char != String
@@ -23,7 +23,7 @@ age       = ColumnSchema(:age,       "Age (years)", Int,    !CATEGORICAL, IS_REQ
 dose      = ColumnSchema(:dose,      "Dose size",   String,  CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, ["small", "medium", "large"])
 fever     = ColumnSchema(:fever,     "Had fever",   Bool,    CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, Bool)
 ts        = TableSchema(:mytable, "My table", [patientid, age, dose, fever], [:patientid])
-schema    = Schema(:fever, "Fever schema", [ts])
+schema    = Schema(:fever, "Fever schema", Dict(:mytable => ts))
 
 pid2 = ColumnSchema(:pid2, "Patient ID", UInt, !CATEGORICAL, !IS_REQUIRED, IS_UNIQUE, UInt)
 @test_throws ErrorException TableSchema(:mytable, "My table", [pid2, age, dose, fever], [:pid2])  # Primary key not unique

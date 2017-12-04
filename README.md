@@ -28,7 +28,7 @@ age       = ColumnSchema(:age,       "Age (years)", Int,    !CATEGORICAL, IS_REQ
 dose      = ColumnSchema(:dose,      "Dose size",   String,  CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, ["small", "medium", "large"])
 fever     = ColumnSchema(:fever,     "Had fever",   Bool,    CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, Bool)
 ts        = TableSchema(:mytable, "My table", [patientid, age, dose, fever], [:patientid])
-schema    = Schema(:fever, "Fever schema", [ts])
+schema    = Schema(:fever, "Fever schema", Dict(:mytable => ts))
 
 # Data
 tbl = DataFrame(

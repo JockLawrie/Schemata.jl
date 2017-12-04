@@ -2,7 +2,7 @@ fever:
     type: Schema
     description: "Fever schema"
     tables:
-        - mytable:
+        mytable:
             description: "My table"
             primary_key: patientid
             columns:

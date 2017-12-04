@@ -51,14 +51,10 @@ struct Schema
     name::Symbol
     description::String
     tables::Dict{Symbol, TableSchema}  # table_name => table_schema
-    tbl_order::Vector{Symbol}          # Determines the order of the tables
-end
 
-
-function Schema(name, description, tables::Vector{TableSchema})
-    tbl_order = [tbl.name for tbl in tables]
-    tables    = Dict(tbl.name => tbl for tbl in tables)
-    Schema(name, description, tables, tbl_order)
+    function Schema(name, description, tables)
+        new(name, description, tables)
+    end
 end
 
 
