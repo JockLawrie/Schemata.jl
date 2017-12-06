@@ -29,13 +29,13 @@ function enforce_schema(indata, tblschema::TableSchema, set_invalid_to_missing::
       - Set categorical columns where required
     =#
     for (colname, colschema) in tblschema.columns
-        target_type  = eltype(outdata[colname])
+        target_type  = colschema.eltyp
         validvals    = colschema.valid_values
         vv_type      = typeof(validvals)
         invalid_vals = Set{Any}()
         for i = 1:n
             val = indata[i, colname]
-            isna(val) && continue
+            ismissing(val) && continue
             is_invalid = false
             if typeof(val) != target_type  # Convert type
                 try
@@ -59,7 +59,7 @@ function enforce_schema(indata, tblschema::TableSchema, set_invalid_to_missing::
             end
         end
         if colschema.is_categorical
-            pool!(outdata, colname)
+            categorical!(outdata, colname)
         end
         if !isempty(invalid_vals)
             invalid_vals = [x for x in invalid_vals]  # Convert Set to Vector
@@ -81,7 +81,8 @@ function init_compliant_data(tblschema::TableSchema, n::Int)
     result = DataFrame()
     for colname in tblschema.col_order
         colschema = tblschema.columns[colname]
-        result[colname] = DataArray(colschema.eltyp, n)
+        result[colname] = Vector{Union{colschema.eltyp, Missing}}(n)  # Each entry is #undef
+        fill!(result[colname], missing)  # Set each entry to missing
     end
     result
 end

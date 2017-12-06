@@ -41,11 +41,11 @@ issues = diagnose(tbl, schema.tables[:mytable])
 @test size(issues, 1) == 3
 
 # Modify data to comply with the schema
-pool!(tbl, [:dose, :fever])  # Ensure :dose and :fever contain categorical data
+categorical!(tbl, [:dose, :fever])  # Ensure :dose and :fever contain categorical data
 issues = diagnose(tbl, schema.tables[:mytable])
 @test size(issues, 1) == 1
 
-tbl[:patientid] = convert(DataArray{UInt}, tbl[:patientid])
+tbl[:patientid] = convert(Vector{UInt}, tbl[:patientid])
 issues = diagnose(tbl, schema.tables[:mytable])
 @test size(issues, 1) == 0
 
@@ -64,7 +64,7 @@ tbl, issues = enforce_schema(tbl, schema.tables[:mytable], false);
 # Fix data: Attempt 2
 tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
 @test size(issues, 1) == 1
-@test isna(tbl[4, :age]) == true
+@test ismissing(tbl[4, :age]) == true
 
 # Fix data: Attempt 3
 tbl[4, :age] = 44

@@ -83,21 +83,31 @@ function column_level_issues!(issues, tbl, columns::Dict{Symbol, ColumnSchema}, 
         !haskey(columns, colname) && continue  # This problem is detected at the table level
         colschema = columns[colname]
         coldata   = tbl[colname]
-        vals      = Set{Any}(coldata)  # Type qualifier {Any} allows NAs to be a member of the set
+        vals      = Set{Any}(coldata)  # Type qualifier {Any} allows missing to be a member of the set
         validvals = colschema.valid_values
 
         # Ensure correct eltype
-        if eltype(coldata) != colschema.eltyp
-            insert_issue!(issues, ("column", "$tblname.$colname"), "Data has eltype $(eltype(coldata)), schema requires $(colschema.eltyp).")
+        if colschema.is_categorical
+            eltyp = eltype(levels(coldata))
+        else
+            eltyp = eltype(coldata)  # Assumes no missing data
+            if !isempty(fieldnames(eltyp)) && eltyp <: Union{T, Missing} where {T <: Any}
+                eltyp = eltyp.a
+            elseif !isempty(fieldnames(eltype)) && eltyp <: Union{Missing, T} where {T <: Any}
+                eltyp = eltyp.b
+            end
+        end
+        if eltyp != colschema.eltyp
+            insert_issue!(issues, ("column", "$tblname.$colname"), "Data has eltype $(eltyp)), schema requires $(colschema.eltyp).")
         end
 
         # Ensure categorical
-        if colschema.is_categorical && !(typeof(coldata) <: DataArrays.PooledDataArray)
+        if colschema.is_categorical && !(typeof(coldata) <: CategoricalArray)
             insert_issue!(issues, ("column", "$tblname.$colname"), "Data is not categorical.")
         end
 
         # Ensure no missing data
-        if colschema.is_required && in(NA, vals)
+        if colschema.is_required && in(missing, vals)
             insert_issue!(issues, ("column", "$tblname.$colname"), "Missing data not allowed.")
         end
 
@@ -112,7 +122,7 @@ function column_level_issues!(issues, tbl, columns::Dict{Symbol, ColumnSchema}, 
         invalid_values = Set{colschema.eltyp}()
         if tp <: Vector || tp <: Range  # eltype(valid_values) has implicitly been checked via the eltype check
             for val in vals
-                isna(val) && continue
+                ismissing(val) && continue
                 if !in(val, validvals)
                     push!(invalid_values, val)
                 end
@@ -168,8 +178,9 @@ end
 
 
 function issues_to_dataframe(issues, nissues::Int)
-    m = Main
-    result = m.DataFrame(entity = m.DataArray(String, nissues), id = m.DataArray(String, nissues), issue = m.DataArray(String, nissues))
+    result = Main.DataFrame(entity = Vector{Union{String, Missing}}(nissues),
+                            id     = Vector{Union{String, Missing}}(nissues),
+                            issue  = Vector{Union{String, Missing}}(nissues))
     i = 0
     for (ety_id, issue_set) in issues
         for iss in issue_set
