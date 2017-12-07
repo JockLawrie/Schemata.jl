@@ -90,12 +90,7 @@ function column_level_issues!(issues, tbl, columns::Dict{Symbol, ColumnSchema}, 
         if colschema.is_categorical
             eltyp = eltype(levels(coldata))
         else
-            eltyp = eltype(coldata)  # Assumes no missing data
-            if !isempty(fieldnames(eltyp)) && eltyp <: Union{T, Missing} where {T <: Any}
-                eltyp = eltyp.a
-            elseif !isempty(fieldnames(eltype)) && eltyp <: Union{Missing, T} where {T <: Any}
-                eltyp = eltyp.b
-            end
+            eltyp = Missings.T(eltype(coldata))
         end
         if eltyp != colschema.eltyp
             insert_issue!(issues, ("column", "$tblname.$colname"), "Data has eltype $(eltyp)), schema requires $(colschema.eltyp).")
