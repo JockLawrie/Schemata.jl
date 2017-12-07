@@ -173,9 +173,9 @@ end
 
 
 function issues_to_dataframe(issues, nissues::Int)
-    result = Main.DataFrame(entity = Vector{Union{String, Missing}}(nissues),
-                            id     = Vector{Union{String, Missing}}(nissues),
-                            issue  = Vector{Union{String, Missing}}(nissues))
+    result = Main.DataFrame(entity = missings(String, nissues),
+                            id     = missings(String, nissues),
+                            issue  = missings(String, nissues))
     i = 0
     for (ety_id, issue_set) in issues
         for iss in issue_set

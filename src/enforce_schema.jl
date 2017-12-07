@@ -81,8 +81,7 @@ function init_compliant_data(tblschema::TableSchema, n::Int)
     result = DataFrame()
     for colname in tblschema.col_order
         colschema = tblschema.columns[colname]
-        result[colname] = Vector{Union{colschema.eltyp, Missing}}(n)  # Each entry is #undef
-        fill!(result[colname], missing)  # Set each entry to missing
+        result[colname] = missings(colschema.eltyp, n)
     end
     result
 end
