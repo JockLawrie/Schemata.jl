@@ -19,6 +19,14 @@ mutable struct ColumnSchema
 end
 
 
+function ColumnSchema(dct::Dict)
+for (k, v) in dct
+    println("$k => $v")
+end
+    ColumnSchema(name, description, eltyp, is_categorical, is_required, is_unique, valid_values)
+end
+
+
 ################################################################################
 struct TableSchema
     name::Symbol
@@ -46,6 +54,25 @@ function TableSchema(name, description, columns::Vector{ColumnSchema}, primary_k
 end
 
 
+function TableSchema(dct::Dict)
+    name        = Symbol(dct["name"])
+    description = dct["description"]
+    primary_key = [Symbol(pk) for pk in dct["primary_key"]]
+    cols        = dct["columns"]
+    columns     = Dict{Symbol, ColumnSchema}()
+    col_order   = fill(Symbol("x"), size(cols, 1))
+    i = 0
+    for colname2schema in cols
+        for (colname, colschema) in colname2schema
+            i += 1
+            col_order[i] = Symbol(colname)
+            columns[col_order[i]] = ColumnSchema(colschema)
+        end
+    end
+    Tableschema(name, description, columns, col_order, primary_key)
+end
+
+
 ################################################################################
 struct Schema
     name::Symbol
@@ -55,6 +82,18 @@ struct Schema
     function Schema(name, description, tables)
         new(name, description, tables)
     end
+end
+
+
+function Schema(dct::Dict)
+    name = dct["name"]
+    description = dct["description"]
+    tables = Dict{Symbol, TableSchema}()
+    for (tblname, tblschema) in dct["tables"]
+        tblschema["name"]       = tblname
+        tables[Symbol(tblname)] = TableSchema(tblschema)
+    end
+    Schema(name, description, tables)
 end
 
 

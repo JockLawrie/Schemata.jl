@@ -4,12 +4,8 @@ function readschema(filename::String)
     dct = YAML.load(io)
     close(io)
     length(dct) > 1 && error("File $(filename) contains an incorrectly specified schema.")
-    dict_to_schema(dct)
-end
 
-
-function dict_to_schema(dct::Dict)
-    # Get schema-level info
+    # Get schema name
     schema = ""
     schema_name = ""
     for (k, v) in dct
@@ -17,6 +13,14 @@ function dict_to_schema(dct::Dict)
         schema = v
         break
     end
+    schema["name"] = schema_name
+    dict_to_schema(schema)
+end
+
+
+function dict_to_schema(schema::Dict)
+    # Get schema-level info
+    schema_name  = schema["name"]
     schema_descr = schema["description"]
 
     # Extract tables
