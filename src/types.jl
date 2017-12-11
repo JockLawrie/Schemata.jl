@@ -20,10 +20,14 @@ end
 
 
 function ColumnSchema(dct::Dict)
-for (k, v) in dct
-    println("$k => $v")
-end
-    ColumnSchema(name, description, eltyp, is_categorical, is_required, is_unique, valid_values)
+    name           = dct["name"]
+    descr          = dct["description"]
+    eltyp          = eval(parse(dct["datatype"]))
+    is_categorical = dct["categorical"]
+    is_required    = dct["required"]
+    is_unique      = dct["unique"]
+    validvalues    = determine_validvalues(dct["validvalues"])
+    ColumnSchema(name, descr, eltyp, is_categorical, is_required, is_unique, validvalues)
 end
 
 
@@ -36,7 +40,7 @@ struct TableSchema
     primary_key::Vector{Symbol}             # vector of column names
     intrarow_constraints::Vector{Function}  # Constraints between columns within a row (e.g., marriage date > birth date)
 
-    function TableSchema(name, description, columns, col_order, primary_key, intrarow_constraints)
+    function TableSchema(name, description, columns, col_order, primary_key, intrarow_constraints=Function[])
         for colname in primary_key
             !haskey(columns, colname) && error("Table :$name. Primary key has a non-existent column ($colname).")
             colschema = columns[colname]
@@ -47,17 +51,18 @@ struct TableSchema
 end
 
 
-function TableSchema(name, description, columns::Vector{ColumnSchema}, primary_key)
+function TableSchema(name, description, columns::Vector{ColumnSchema}, primary_key, intrarow_constraints=Function[])
     col_order = [col.name for col in columns]
     columns   = Dict(col.name => col for col in columns)
-    TableSchema(name, description, columns, col_order, primary_key, Function[]) 
+    TableSchema(name, description, columns, col_order, primary_key, intrarow_constraints)
 end
 
 
 function TableSchema(dct::Dict)
     name        = Symbol(dct["name"])
     description = dct["description"]
-    primary_key = [Symbol(pk) for pk in dct["primary_key"]]
+    pk          = dct["primary_key"]  # String or Vector{String}
+    primary_key = typeof(pk) == String ? [Symbol(pk)] : [Symbol(colname) for colname in pk]
     cols        = dct["columns"]
     columns     = Dict{Symbol, ColumnSchema}()
     col_order   = fill(Symbol("x"), size(cols, 1))
@@ -65,11 +70,16 @@ function TableSchema(dct::Dict)
     for colname2schema in cols
         for (colname, colschema) in colname2schema
             i += 1
-            col_order[i] = Symbol(colname)
+            col_order[i]          = Symbol(colname)
+            colschema["name"]     = col_order[i]
             columns[col_order[i]] = ColumnSchema(colschema)
         end
     end
-    Tableschema(name, description, columns, col_order, primary_key)
+    intrarow_constraints = Function[]
+    if haskey(dct, "intrarow_constraints")
+        intrarow_constraints = dct["intrarow_constraints"]
+    end
+    TableSchema(name, description, columns, col_order, primary_key, intrarow_constraints)
 end
 
 

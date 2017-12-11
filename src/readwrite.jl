@@ -14,46 +14,7 @@ function readschema(filename::String)
         break
     end
     schema["name"] = schema_name
-    dict_to_schema(schema)
-end
-
-
-function dict_to_schema(schema::Dict)
-    # Get schema-level info
-    schema_name  = schema["name"]
-    schema_descr = schema["description"]
-
-    # Extract tables
-    tables = Dict{Symbol, TableSchema}()
-    tblschemata = schema["tables"]  # tblname => tblschema
-    for (tblname, tblschema) in tblschemata
-        # Extract table description and primary key
-        tbl_descr = tblschema["description"]
-        primkey   = tblschema["primary_key"]
-        primkey   = typeof(primkey) == String ? [Symbol(primkey)] : [Symbol(colname) for colname in primkey]
-
-        # Extract columns
-        columns = ColumnSchema[]
-        colschemata = tblschema["columns"]  # Vector{Dict}, each Dict contains 1 kv pair: colname => colschema
-        for colsch in colschemata
-            length(colsch) > 1 && error("Column schema in table $tblname has more than 1 name.")
-            for (colname, colschema) in colsch
-                col_descr = colschema["description"]
-                eltyp     = eval(parse(colschema["datatype"]))
-                catgry    = colschema["categorical"]
-                required  = colschema["required"]
-                uniq      = colschema["unique"]
-                validvals = determine_validvalues(colschema["validvalues"])
-                cs        = ColumnSchema(Symbol(colname), col_descr, eltyp, catgry, required, uniq, validvals)
-                push!(columns, cs)
-            end
-        end
-
-        # Push table schema to result
-        nm = Symbol(tblname)
-        tables[nm] = TableSchema(nm, tbl_descr, columns, primkey)
-    end
-    Schema(schema_name, schema_descr, tables)
+    Schema(schema)
 end
 
 #=
@@ -68,8 +29,7 @@ function determine_validvalues(vv)
 end
 
 function determine_validvalues(vv::String)
-    ex = parse(vv)
-    eval(ex)
+    eval(parse(vv))
 end
 
 
