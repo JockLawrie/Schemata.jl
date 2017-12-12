@@ -83,6 +83,18 @@ diagnose(tbl, schema.tables[:mytable])
 tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
 tbl
 issues
+
+# Add a Date column to the schema; note the args in the datatype
+datatype = Dict("type" => Date, "args" => "Y-m-d")
+dosedate = ColumnSchema(:date, "Dose date", datatype, CATEGORICAL, !IS_REQUIRED, !IS_UNIQUE, datatype)
+insert_column!(schema.tables[:mytable], dosedate)
+
+# Add a corresponding (compliant) column to the data
+tbl[:date] = ["2017-12-01", "2017-12-01", "2017-12-11", "2017-12-09"];
+diagnose(tbl, schema.tables[:mytable])
+tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
+tbl
+issues
 ```
 
 
@@ -92,14 +104,10 @@ issues
 
 2. Implement writeschema.
 
-3. Handle Dates.
+3. Implement `intrarow_constraints` for `TableSchema`.
 
-4. Pre and post-enforcement transformations: more power for converting the data you have into the data you want. Better handled with `DataStreams`?
+4. Define joins between tables within a schema, as well as intrarow_constraints across tables.
 
-5. Implement `intrarow_constraints` for `TableSchema`.
+5. Infer a simple `Schema` from a given data table.
 
-6. Define joins between tables within a schema, as well as intrarow_constraints across tables.
-
-7. Infer a simple `Schema` from a given data table.
-
-8. Remove dependence on DataFrames?
+6. Remove dependence on DataFrames?
