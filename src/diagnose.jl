@@ -87,13 +87,16 @@ function column_level_issues!(issues, tbl, columns::Dict{Symbol, ColumnSchema}, 
         validvals = colschema.valid_values
 
         # Ensure correct eltype
+        data_eltyp_isvalid = true
+        schema_eltyp = eltype(colschema)
         if colschema.is_categorical
-            eltyp = eltype(levels(coldata))
+            data_eltyp = eltype(levels(coldata))
         else
-            eltyp = Missings.T(eltype(coldata))
+            data_eltyp = Missings.T(eltype(coldata))
         end
-        if eltyp != colschema.eltyp
-            insert_issue!(issues, ("column", "$tblname.$colname"), "Data has eltype $(eltyp)), schema requires $(colschema.eltyp).")
+        if data_eltyp != schema_eltyp
+            data_eltyp_isvalid = false
+            insert_issue!(issues, ("column", "$tblname.$colname"), "Data has eltype $(data_eltyp), schema requires $(schema_eltyp).")
         end
 
         # Ensure categorical
@@ -112,21 +115,21 @@ function column_level_issues!(issues, tbl, columns::Dict{Symbol, ColumnSchema}, 
         end
 
         # Ensure valid values
-        eltype(coldata) != colschema.eltyp && continue  # Only do this check if the data type is valid
+        !data_eltyp_isvalid && continue  # Only do this check if the data type is valid
         tp = typeof(validvals)
-        invalid_values = Set{colschema.eltyp}()
-        if tp <: Vector || tp <: Range  # eltype(valid_values) has implicitly been checked via the eltype check
+        invalid_values = Set{schema_eltyp}()
+        if tp <: Dict || tp <: Vector || tp <: Range  # eltype(valid_values) has implicitly been checked via the eltype check
             for val in vals
                 ismissing(val) && continue
-                if !in(val, validvals)
+                if !(typeof(validvals) <: Dict) && !in(val, validvals)
                     push!(invalid_values, val)
                 end
             end
-            if !isempty(invalid_values)
-                invalid_values = [x for x in invalid_values]  # Convert Set to Vector
-                sort!(invalid_values)
-                insert_issue!(issues, ("column", "$tblname.$colname"), "Invalid values: $(invalid_values)")
-            end
+        end
+        if !isempty(invalid_values)
+            invalid_values = [x for x in invalid_values]  # Convert Set to Vector
+            sort!(invalid_values)
+            insert_issue!(issues, ("column", "$tblname.$colname"), "Invalid values: $(invalid_values)")
         end
     end
 end

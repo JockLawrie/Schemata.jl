@@ -92,3 +92,16 @@ issues = diagnose(tbl, schema.tables[:mytable])
 # Fix the data
 tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
 @test size(issues, 1) == 0
+
+
+# Add a new column to the schema
+datatype = Dict("type" => Date, "args" => "Y-m-d")
+dosedate = ColumnSchema(:date, "Dose date", datatype, CATEGORICAL, !IS_REQUIRED, !IS_UNIQUE, datatype)
+insert_column!(schema.tables[:mytable], dosedate)
+
+# Add a corresponding (compliant) column to the data
+tbl[:date] = ["2017-12-01", "2017-12-01", "2017-12-11", "2017-12-09"];
+issues = diagnose(tbl, schema.tables[:mytable])
+@test size(issues, 1) == 2
+tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
+@test size(issues, 1) == 0

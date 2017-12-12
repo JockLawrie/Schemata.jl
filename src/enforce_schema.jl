@@ -39,12 +39,12 @@ function enforce_schema(indata, tblschema::TableSchema, set_invalid_to_missing::
             is_invalid = false
             if typeof(val) != target_type  # Convert type
                 try
-                    val = typeof(val) == String ? parse(target_type, val) : convert(target_type, val)
+                    val = parse_as_type(target_type, val)
                 catch
                     is_invalid = true
                 end
             end
-            if !is_invalid && (vv_type <: Vector || vv_type <: Range)  # Check whether value is valid
+            if !is_invalid && (vv_type <: Vector || vv_type <: Range)  # Value has correct type, now check that value is in the valid range
                 if !in(val, validvals)
                     is_invalid = true
                 end
@@ -53,7 +53,7 @@ function enforce_schema(indata, tblschema::TableSchema, set_invalid_to_missing::
                 push!(invalid_vals, val)
             end
             if !is_invalid || (is_invalid && !set_invalid_to_missing)
-                if typeof(val) == target_type
+                if typeof(val) == Missings.T(eltype(outdata[colname]))
                     outdata[i, colname] = val
                 end
             end
@@ -81,7 +81,15 @@ function init_compliant_data(tblschema::TableSchema, n::Int)
     result = DataFrame()
     for colname in tblschema.col_order
         colschema = tblschema.columns[colname]
-        result[colname] = missings(colschema.eltyp, n)
+        eltyp     = eltype(colschema)
+        result[colname] = missings(eltyp, n)
     end
     result
 end
+
+
+parse_as_type(target_type, val::String) = parse(target_type, val)
+
+parse_as_type(target_type, val) = convert(target_type, val)
+
+parse_as_type(target_type::Dict, val::String) = target_type["type"](val, target_type["args"]...; target_type["kwargs"]...)
