@@ -43,5 +43,25 @@ end
 
 function extract_eltype(s::Dict)
     s["type"] = eval(parse("$(module_parent(current_module())).$(s["type"])"))
+    if haskey(s, "args")
+        s["args"] = convert_args_types(s["args"])
+    end
+    if haskey(s, "kwargs")
+        s["kwargs"] = convert_args_types(s["kwargs"])
+    end
     s
+end
+
+
+function convert_args_types(vec::Vector)
+    nargs  = length(vec)
+    result = Vector{Any}(nargs)
+    for i = 1:nargs
+        try
+            result[i] = eval(parse("$(module_parent(current_module())).$(vec[i])"))
+        catch
+            result[i] = vec[i]
+        end
+    end
+    result
 end
