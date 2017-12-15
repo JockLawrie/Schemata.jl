@@ -99,9 +99,10 @@ parse_as_type(target_type, val::String) = parse(target_type, val)
 parse_as_type(target_type, val) = convert(target_type, val)
 
 function parse_as_type(target_type::Dict, val::String)
+    tp = target_type["type"]
     if haskey(target_type, "kwargs")
-        target_type["type"](val, target_type["args"]...; target_type["kwargs"]...)
+        tp(val, target_type["args"]...; target_type["kwargs"]...)
     else
-        target_type["type"](val, target_type["args"]...)
+        tp(val, target_type["args"]...)
     end
 end
