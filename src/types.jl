@@ -128,7 +128,7 @@ end
 
 
 function Schema(dct::Dict)
-    name = dct["name"]
+    name = Symbol(dct["name"])
     description = dct["description"]
     tables = Dict{Symbol, TableSchema}()
     for (tblname, tblschema) in dct["tables"]
