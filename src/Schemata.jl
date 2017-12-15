@@ -10,8 +10,9 @@ const CATEGORICAL = true
 const IS_REQUIRED = true
 const IS_UNIQUE   = true
 
-using YAML
+using Base.Dates
 using DataFrames
+using YAML
 
 include("types.jl")
 include("readwrite.jl")

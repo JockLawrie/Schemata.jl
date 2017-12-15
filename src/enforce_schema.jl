@@ -48,9 +48,6 @@ function enforce_schema(indata, tblschema::TableSchema, set_invalid_to_missing::
             if !is_invalid && (vv_type <: Vector || vv_type <: Range) && !value_is_valid(val, validvals)
                 is_invalid = true
             end
-
-
-
             # Record invalid value
             if is_invalid && !set_invalid_to_missing
                 push!(invalid_vals, val)
@@ -97,6 +94,14 @@ end
 parse_as_type(target_type, val::String) = parse(target_type, val)
 
 parse_as_type(target_type, val) = convert(target_type, val)
+
+function parse_as_type(::Type{Date}, val::String)
+    try
+        Date(val[1:10])   # example: "2017-12-31"
+    catch
+        eval(parse(val))  # example: "today() + Day(4)"
+    end
+end
 
 function parse_as_type(target_type::Dict, val::String)
     tp = target_type["type"]

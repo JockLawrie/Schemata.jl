@@ -116,7 +116,7 @@ function parse_nonbase_range(vv::String, eltyp)
     elseif length(vv) == 2
         val1 = parse_as_type(eltyp, vv[1])
         val2 = parse_as_type(eltyp, vv[2])
-        return val1:Dates.Minute(1):val2
+        return val1:val2
     elseif length(vv) == 3
         val1 = parse_as_type(eltyp, vv[1])
         val2 = parse_as_type(eltyp, vv[2])

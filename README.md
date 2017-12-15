@@ -100,7 +100,7 @@ issues
 
 # TODO
 
-1. Implement == for the types.
+1. Remove hard coded Date handling.
 
 2. Implement writeschema.
 
