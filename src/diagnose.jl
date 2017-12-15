@@ -118,11 +118,18 @@ function column_level_issues!(issues, tbl, columns::Dict{Symbol, ColumnSchema}, 
         !data_eltyp_isvalid && continue  # Only do this check if the data type is valid
         tp = typeof(validvals)
         invalid_values = Set{schema_eltyp}()
-        if tp <: Dict || tp <: Vector || tp <: Range  # eltype(valid_values) has implicitly been checked via the eltype check
-            for val in vals
-                ismissing(val) && continue
-                if !(typeof(validvals) <: Dict) && !in(val, validvals)
-                    push!(invalid_values, val)
+        if !(typeof(validvals) <: Dict) && (tp <: Dict || tp <: Vector || tp <: Range)  # eltype(valid_values) has implicitly been checked via the eltype check
+            if typeof(coldata) <: CategoricalArray
+                lvls = levels(coldata)
+                for val in vals
+                    ismissing(val) && continue
+                    v = lvls[val.level]
+                    !value_is_valid(v, validvals) && push!(invalid_values, v)
+                end
+            else
+                for val in vals
+                    ismissing(val) && continue
+                    !value_is_valid(val, validvals) && push!(invalid_values, val)
                 end
             end
         end

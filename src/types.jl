@@ -2,14 +2,16 @@ mutable struct ColumnSchema
     name::Symbol
     description::String
     eltyp::Union{DataType, Dict}  # The type of each value in the column. Dict contains "type"=>some_type, plus options.
-    is_categorical::Bool   # Specifies whether the values represent categories. If so, order is specified by valid_values.
-    is_required::Bool      # Is non-missing data required?
-    is_unique::Bool        # Is each value in the column unique?
+    is_categorical::Bool          # Specifies whether the values represent categories. If so, order is specified by valid_values.
+    is_required::Bool             # Is non-missing data required?
+    is_unique::Bool               # Is each value in the column unique?
     valid_values::Union{DataType, Dict, <:Range, <:Vector}  # Either the full range of the data type or a user-supplied restriction.
 
     function ColumnSchema(name, description, eltyp, is_categorical, is_required, is_unique, valid_values)
         # Ensure eltyp is either a DataType or a Dict containing "type" => some_type
-        if typeof(eltyp) <: Dict
+        tp_eltyp = typeof(eltyp)
+        !(tp_eltyp == DataType || tp_eltyp <: Dict) && error("ColumnSchema eltype is neither a DataType nor a Dict.")
+        if tp_eltyp <: Dict
             !haskey(eltyp, "type") && error("Eltype is a Dict without pair type=>some_type.")
             typeof(eltyp["type"]) != DataType && error("Eltype is a Dict with pair type=>val, but val is not a DataType.")
 
@@ -29,12 +31,9 @@ mutable struct ColumnSchema
         end
 
         # Ensure eltyp and valid_values are consistent with each other
-        tp = typeof(valid_values)
-        if tp == DataType && valid_values != eltyp
-            error("Column :$name. Type of valid_values ($valid_values) does not match eltype ($eltyp).")
-        elseif eltype(valid_values) != eltyp && valid_values != eltyp   # Last clause included because eltype(String) == Char
-            error("Column :$name. Type of valid_values ($(eltype(valid_values))) does not match eltype ($eltyp).")
-        end
+        tp_eltyp     = get_datatype(eltyp)
+        tp_validvals = get_datatype(valid_values)
+        tp_eltyp    != tp_validvals && error("Column :$name. Type of valid values ($tp_validvals) does not match that of eltype ($tp_eltyp).")
         new(name, description, eltyp, is_categorical, is_required, is_unique, valid_values)
     end
 end
@@ -43,22 +42,25 @@ end
 function ColumnSchema(dct::Dict)
     name           = dct["name"]
     descr          = dct["description"]
-    eltyp          = extract_eltype(dct["datatype"])
+    eltyp          = determine_eltype(dct["datatype"])
     is_categorical = dct["categorical"]
     is_required    = dct["required"]
     is_unique      = dct["unique"]
-    validvalues    = dct["validvalues"] == "datatype" ? eltyp : determine_validvalues(dct["validvalues"])
+    validvalues    = determine_validvalues(dct["validvalues"], eltyp)
     ColumnSchema(name, descr, eltyp, is_categorical, is_required, is_unique, validvalues)
 end
 
+
 import Base.eltype
+"Get eltyp from existing ColumnSchema."
 function eltype(colschema::ColumnSchema)
-    result = colschema.eltyp
-    if typeof(result) <: Dict
-        result = result["type"]
-    end
-    result
+    get_datatype(colschema.eltyp)
 end
+
+get_datatype(vv::DataType) = vv
+get_datatype(vv::Dict)     = vv["type"]
+get_datatype(vv::Range)    = typeof(vv[1])
+get_datatype(vv::Vector)   = eltype(vv)
 
 
 ################################################################################

@@ -44,12 +44,15 @@ function enforce_schema(indata, tblschema::TableSchema, set_invalid_to_missing::
                     is_invalid = true
                 end
             end
-            if !is_invalid && (vv_type <: Vector || vv_type <: Range)  # Value has correct type, now check that value is in the valid range
-                if !in(val, validvals)
-                    is_invalid = true
-                end
+            # Value has correct type, now check that value is in the valid range
+            if !is_invalid && (vv_type <: Vector || vv_type <: Range) && !value_is_valid(val, validvals)
+                is_invalid = true
             end
-            if is_invalid && !set_invalid_to_missing  # Record invalid value
+
+
+
+            # Record invalid value
+            if is_invalid && !set_invalid_to_missing
                 push!(invalid_vals, val)
             end
             if !is_invalid || (is_invalid && !set_invalid_to_missing)
@@ -75,6 +78,9 @@ function enforce_schema(indata, tblschema::TableSchema, set_invalid_to_missing::
     outdata, issues
 end
 
+value_is_valid(val, validvals::Vector) = in(val, validvals) ? true : false
+value_is_valid(val, validvals::Range)  = val >= validvals[1] && val <= validvals[end]  #Check only the end points for efficiency. TODO: Check interior points efficiently.
+
 
 "Returns: A table with unpopulated columns with name, type, length and order matching the table schema."
 function init_compliant_data(tblschema::TableSchema, n::Int)
@@ -92,4 +98,10 @@ parse_as_type(target_type, val::String) = parse(target_type, val)
 
 parse_as_type(target_type, val) = convert(target_type, val)
 
-parse_as_type(target_type::Dict, val::String) = target_type["type"](val, target_type["args"]...; target_type["kwargs"]...)
+function parse_as_type(target_type::Dict, val::String)
+    if haskey(target_type, "kwargs")
+        target_type["type"](val, target_type["args"]...; target_type["kwargs"]...)
+    else
+        target_type["type"](val, target_type["args"]...)
+    end
+end
