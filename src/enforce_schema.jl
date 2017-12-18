@@ -36,6 +36,7 @@ function enforce_schema(indata, tblschema::TableSchema, set_invalid_to_missing::
         for i = 1:n
             val = indata[i, colname]
             ismissing(val) && continue
+            typeof(val) == String && val == "" && continue
             is_invalid = false
             if typeof(val) != target_type  # Convert type
                 try
