@@ -183,9 +183,9 @@ end
 
 
 function issues_to_dataframe(issues, nissues::Int)
-    result = Main.DataFrame(entity = missings(String, nissues),
-                            id     = missings(String, nissues),
-                            issue  = missings(String, nissues))
+    result = DataFrame(entity = missings(String, nissues),
+                       id     = missings(String, nissues),
+                       issue  = missings(String, nissues))
     i = 0
     for (ety_id, issue_set) in issues
         for iss in issue_set
@@ -196,4 +196,19 @@ function issues_to_dataframe(issues, nissues::Int)
         end
     end
     sort!(result, cols=(:entity, :id, :issue))
+end
+
+
+function issues_to_dataframe(issues::Vector{Tuple{String, String, String}})
+    nissues = size(issues, 1)
+    result  = DataFrame(entity = missings(String, nissues),
+                        id     = missings(String, nissues),
+                        issue  = missings(String, nissues))
+    for i = 1:nissues
+        issue = issues[i]
+        result[i, :entity] = issue[1]
+        result[i, :id]     = issue[2]
+        result[i, :issue]  = issue[3]
+    end
+    result
 end
