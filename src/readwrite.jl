@@ -111,18 +111,13 @@ function parse_nonbase_range(vv::String, eltyp)
        - Removes leading/trailing spaces.
     =#
     vv = strip.(String.(split(vv[2:(end-1)], ",")))
-    if length(vv) == 1
-        error("Range of non-Base type contains only 1 element.")
-    elseif length(vv) == 2
+    if length(vv) != 3
+        error("Range of non-Base type requires 3 elements. It has $(length(vv)).")
+    else
         val1 = parse_as_type(eltyp, vv[1])
-        val2 = parse_as_type(eltyp, vv[2])
-        return val1:val2
-    elseif length(vv) == 3
-        val1 = parse_as_type(eltyp, vv[1])
-        val2 = parse_as_type(eltyp, vv[2])
+        tp   = get_datatype(eltyp)
+        val2 = tp <: Base.Dates.TimeType ? eval(parse(vv[2])) : parse_as_type(eltyp, vv[2])  # HACK: middle value has type Dates.Period
         val3 = parse_as_type(eltyp, vv[3])
         return val1:val2:val3
-    else
-        error("Range of non-Base type contains more than 3 elements.")
     end
 end
