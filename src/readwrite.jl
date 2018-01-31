@@ -77,7 +77,17 @@ vv could be a:
 """
 function determine_vv(vv::String, eltyp)
     vv[1] == '(' && return parse_nonbase_range(vv, eltyp)
-    eval(parse("$(module_parent(current_module())).$(vv)"))  # Prepend module for non-Base types
+    result = try
+        eval(parse("$(module_parent(current_module())).$(vv)"))  # Prepend module for types
+    catch
+        eval(parse(vv))  # Instances of types
+    end
+    result
+end
+
+
+function determine_vv(vv::Vector, eltyp)
+    vv
 end
 
 
