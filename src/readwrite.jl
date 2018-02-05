@@ -28,12 +28,17 @@ end
 Determine ColumnSchema.eltyp.
 """
 function determine_eltype(s::String)
-    eval(parse("$(module_parent(current_module())).$(s)"))  # Prepend module for non-Base types
+    #eval(parse("$(module_parent(current_module())).$(s)"))  # Prepend module for non-Base types
+    eval(parse(s))
 end
 
 
 function determine_eltype(d::Dict)
-    d["type"] = eval(parse("$(module_parent(current_module())).$(d["type"])"))
+    d["type"] = try
+        eval(parse("$(module_parent(current_module())).$(d["type"])"))
+    catch
+        eval(parse("Main.$(d["type"])"))
+    end
     if haskey(d, "args")
         d["args"] = convert_args_types(d["args"])
     end
@@ -49,7 +54,8 @@ function convert_args_types(vec::Vector)
     result = Vector{Any}(nargs)
     for i = 1:nargs
         try
-            result[i] = eval(parse("$(module_parent(current_module())).$(vec[i])"))
+            #result[i] = eval(parse("$(module_parent(current_module())).$(vec[i])"))
+            result[i] = eval(parse(vec[i]))
         catch
             result[i] = vec[i]
         end
