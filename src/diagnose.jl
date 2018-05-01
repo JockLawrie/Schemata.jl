@@ -195,7 +195,7 @@ function issues_to_dataframe(issues, nissues::Int)
             result[i, :issue]  = iss
         end
     end
-    sort!(result, cols=(:entity, :id, :issue))
+    sort!(result, (:entity, :id, :issue))
 end
 
 
