@@ -1,35 +1,35 @@
 fever:
-    description: "Fever schema"
-    tables:
-        mytable:
-            description: "My table"
-            primary_key: patientid
-            columns:
-                - patientid:
-                    description: Patient ID
-                    datatype: UInt
-                    categorical: false
-                    required: true
-                    unique: true
-                    validvalues: UInt
-                - age:
-                    description: Age (years)
-                    datatype: Int
-                    categorical: false
-                    required: true
-                    unique: false
-                    validvalues: Int
-                - dose:
-                    description: Dose size
-                    datatype: String
-                    categorical: true
-                    required: true
-                    unique: false
-                    validvalues: ["small", "medium", "large"]
-                - fever:
-                    description: Had fever
-                    datatype: Bool
-                    categorical: true
-                    required: true
-                    unique: false
-                    validvalues: Bool
+  description: "Fever schema"
+  tables:
+    mytable:
+      description: "My table"
+      primary_key: patientid
+      columns:
+      - patientid:
+          description: Patient ID
+          datatype: UInt
+          categorical: false
+          required: true
+          unique: true
+          validvalues: UInt
+      - age:
+          description: Age (years)
+          datatype: Int
+          categorical: false
+          required: true
+          unique: false
+          validvalues: Int
+      - dose:
+          description: Dose size
+          datatype: String
+          categorical: true
+          required: true
+          unique: false
+          validvalues: ["small", "medium", "large"]
+      - fever:
+          description: Had fever
+          datatype: Bool
+          categorical: true
+          required: true
+          unique: false
+          validvalues: Bool

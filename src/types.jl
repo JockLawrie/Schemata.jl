@@ -107,12 +107,22 @@ function TableSchema(dct::Dict)
             columns[col_order[i]] = ColumnSchema(colschema)
         end
     end
-    intrarow_constraints = Function[]
-    if haskey(dct, "intrarow_constraints")
-        intrarow_constraints = dct["intrarow_constraints"]
-    end
+    intrarow_constraints = haskey(dct, "intrarow_constraints") ? construct_intrarow_constraints(dct["intrarow_constraints"]) : Function[]
     TableSchema(name, description, columns, col_order, primary_key, intrarow_constraints)
 end
+
+
+function construct_intrarow_constraints(vec::Vector{String})
+    n = length(vec)
+    result = Vector{Function}(n)
+    for i = 1:n
+      s = "(r) -> $(vec[i])"
+      result[i] = eval(parse(s))
+    end
+    result
+end
+
+construct_intrarow_constraints(s::String) = construct_intrarow_constraints([s])
 
 
 ################################################################################
@@ -126,7 +136,6 @@ struct Schema
     end
 end
 
-
 function Schema(dct::Dict)
     name = Symbol(dct["name"])
     description = dct["description"]
@@ -137,7 +146,6 @@ function Schema(dct::Dict)
     end
     Schema(name, description, tables)
 end
-
 
 #=
 struct Join
