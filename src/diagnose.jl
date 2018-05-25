@@ -76,13 +76,11 @@ function diagnose_table!(issues, tbl, tblschema::TableSchema)
     end
 
     # Ensure that the intra-row constraints are satisfied
-    n = size(tbl, 1)
     for (msg, f) in tblschema.intrarow_constraints
         n_badrows = 0
-        for i = 1:n
-            r = DataFrameRow(tbl, i)
+        for r in eachrow(tbl)
             f(r) && continue  # constraint returns true
-            n_badrows +=1
+            n_badrows += 1
         end
         n_badrows == 0 && continue
         if n_badrows == 1
