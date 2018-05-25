@@ -70,7 +70,7 @@ struct TableSchema
     columns::Dict{Symbol, ColumnSchema}     # colname => col_schema
     col_order::Vector{Symbol}               # Determines the order of the columns
     primary_key::Vector{Symbol}             # vector of column names
-    intrarow_constraints::Vector{Function}  # Constraints between columns within a row (e.g., marriage date > birth date)
+    intrarow_constraints::Vector{Tuple{String, Function}}  # (msg, testfunc). Constraints between columns within a row (e.g., marriage date > birth date)
 
     function TableSchema(name, description, columns, col_order, primary_key, intrarow_constraints=Function[])
         for colname in primary_key
@@ -107,22 +107,23 @@ function TableSchema(dct::Dict)
             columns[col_order[i]] = ColumnSchema(colschema)
         end
     end
-    intrarow_constraints = haskey(dct, "intrarow_constraints") ? construct_intrarow_constraints(dct["intrarow_constraints"]) : Function[]
+    intrarow_constraints = haskey(dct, "intrarow_constraints") ? construct_intrarow_constraints(dct["intrarow_constraints"]) : Tuple{String, Function}[]
     TableSchema(name, description, columns, col_order, primary_key, intrarow_constraints)
 end
 
 
-function construct_intrarow_constraints(vec::Vector{String})
-    n = length(vec)
-    result = Vector{Function}(n)
-    for i = 1:n
-      s = "(r) -> $(vec[i])"
-      result[i] = eval(parse(s))
+function construct_intrarow_constraints(dct::Dict)
+    n = length(dct)
+    result = Vector{Tuple{String, Function}}(n)
+    i = 0
+    for (msg, func) in dct
+      s  = "(r) -> $(func)"
+      f  = eval(parse(s))
+      i += 1
+      result[i] = (msg, f)
     end
     result
 end
-
-construct_intrarow_constraints(s::String) = construct_intrarow_constraints([s])
 
 
 ################################################################################

@@ -1,0 +1,29 @@
+constraints:
+  description: "Date constraints"
+  tables:
+    dates:
+      description: "Table with date constraints"
+      primary_key: patientid
+      intrarow_constraints: {birth date before marriage date: "r[:dob] < r[:date_of_marriage]"}
+      columns:
+      - patientid:
+          description: Patient ID
+          datatype: UInt
+          categorical: false
+          required: true
+          unique: true
+          validvalues: UInt
+      - dob:
+          description: Date of birth
+          datatype: Date
+          categorical: false
+          required: true
+          unique: false
+          validvalues: Date
+      - date_of_marriage:
+          description: Date of marriage 
+          datatype: Date
+          categorical: false
+          required: true
+          unique: false
+          validvalues: Date

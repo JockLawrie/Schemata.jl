@@ -76,17 +76,20 @@ function diagnose_table!(issues, tbl, tblschema::TableSchema)
     end
 
     # Ensure that the intra-row constraints are satisfied
-    constraints = tblschema.intrarow_constraints
-    badrows     = Int[]
-    for j = 1:size(constraints, 1)
-        f = constraints[j]
-        n = size(tbl, 1)
+    n = size(tbl, 1)
+    for (msg, f) in tblschema.intrarow_constraints
+        n_badrows = 0
         for i = 1:n
             r = DataFrameRow(tbl, i)
-            f(r) && continue  # jth constraint returns true
-            push!(badrows, i)
+            f(r) && continue  # constraint returns true
+            n_badrows +=1
         end
-        insert_issue!(issues, ("table","Constraint $(j)"), "Constraint $(j) not satisfied for rows: $(badrows)")
+        n_badrows == 0 && continue
+        if n_badrows == 1
+            insert_issue!(issues, ("table","constraint"), "1 row does not satisfy: $(msg)")
+        else
+            insert_issue!(issues, ("table","constraint"), "$(n_badrows) rows do not satisfy: $(msg)")
+        end
     end
 end
 
