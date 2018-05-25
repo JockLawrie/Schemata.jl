@@ -52,24 +52,23 @@ function diagnose_table!(issues, tbl, tblschema::TableSchema)
     colnames_schema = Set(tblschema.col_order)
     cols = setdiff(colnames_data, colnames_schema)
     if length(cols) > 0
-        insert_issue!(issues, ("table",tblname), "Data has columns that the schema doesn't have ($(cols)).")
+        insert_issue!(issues, ("table", tblname), "Data has columns that the schema doesn't have ($(cols)).")
     end
     cols = setdiff(colnames_schema, colnames_data)
     if length(cols) > 0
-        insert_issue!(issues, ("table",tblname), "Data is missing some columns that the Schema has ($(cols)).")
+        insert_issue!(issues, ("table", tblname), "Data is missing some columns that the Schema has ($(cols)).")
     end
 
     # Ensure that the primary key is unique
     if isempty(setdiff(Set(tblschema.primary_key), colnames_data))  # Primary key cols exist in the data
         pk = unique(tbl[:, tblschema.primary_key])
         if size(pk, 1) != size(tbl, 1)
-            insert_issue!(issues, ("table",tblname), "Primary key not unique.")
+            insert_issue!(issues, ("table", tblname), "Primary key not unique.")
         end
     end
 
     # Column-level issues
     columns = tblschema.columns
-    tblname = String(tblschema.name)
     for colname in names(tbl)
         !haskey(columns, colname) && continue  # This problem is detected at the table level
         diagnose_column!(issues, tbl, columns[colname], tblname)
@@ -79,14 +78,16 @@ function diagnose_table!(issues, tbl, tblschema::TableSchema)
     for (msg, f) in tblschema.intrarow_constraints
         n_badrows = 0
         for r in eachrow(tbl)
-            f(r) && continue  # constraint returns true
+            result = f(r)
+            ismissing(result) && continue  # Only an issue for required values, which is picked up at the column level
+            result && continue             # constraint returns true
             n_badrows += 1
         end
         n_badrows == 0 && continue
         if n_badrows == 1
-            insert_issue!(issues, ("table","constraint"), "1 row does not satisfy: $(msg)")
+            insert_issue!(issues, ("table", tblname), "1 row does not satisfy: $(msg)")
         else
-            insert_issue!(issues, ("table","constraint"), "$(n_badrows) rows do not satisfy: $(msg)")
+            insert_issue!(issues, ("table", tblname), "$(n_badrows) rows do not satisfy: $(msg)")
         end
     end
 end
