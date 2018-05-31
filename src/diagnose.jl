@@ -78,7 +78,8 @@ function diagnose_table!(issues, tbl, tblschema::TableSchema)
     for (msg, f) in tblschema.intrarow_constraints
         n_badrows = 0
         for r in eachrow(tbl)
-            result = f(r)
+            #result = f(r)
+            result = @eval $f($r)          # Hack to avoid world age problems. Should use macros instead.
             ismissing(result) && continue  # Only an issue for required values, which is picked up at the column level
             result && continue             # constraint returns true
             n_badrows += 1
