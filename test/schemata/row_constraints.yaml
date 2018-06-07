@@ -24,6 +24,6 @@ constraints:
           description: Date of marriage 
           datatype: Date
           categorical: false
-          required: true
+          required: false
           unique: false
           validvalues: Date
