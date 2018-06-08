@@ -107,16 +107,18 @@ function TableSchema(dct::Dict)
             columns[col_order[i]] = ColumnSchema(colschema)
         end
     end
-    intrarow_constraints = haskey(dct, "intrarow_constraints") ? construct_intrarow_constraints(dct["intrarow_constraints"]) : Tuple{String, Function}[]
+    intrarow_constraints = construct_intrarow_constraints(dct)
     TableSchema(name, description, columns, col_order, primary_key, intrarow_constraints)
 end
 
 
 function construct_intrarow_constraints(dct::Dict)
-    n = length(dct)
+    !haskey(dct, "intrarow_constraints") && return Tuple{String, Function}[]
+    d = dct["intrarow_constraints"]
+    n = length(d)
     result = Vector{Tuple{String, Function}}(n)
     i = 0
-    for (msg, func) in dct
+    for (msg, func) in d
       s  = "(r) -> $(func)"
       f  = eval(parse(s))
       i += 1
