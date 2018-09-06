@@ -1,0 +1,15 @@
+name = "Schemata"
+uuid = "7a3bc072-b1d0-11e8-119a-ff8667fa4841"
+authors = ["Jock Lawrie <jock.lawrie@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]

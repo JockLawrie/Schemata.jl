@@ -10,7 +10,7 @@ const CATEGORICAL = true
 const IS_REQUIRED = true
 const IS_UNIQUE   = true
 
-using Base.Dates
+using Dates
 using DataFrames
 using YAML
 
