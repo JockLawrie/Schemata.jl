@@ -20,7 +20,7 @@ using DataFrames
 using Schemata
 
 # Read in the schema
-schema = readschema(joinpath(Pkg.dir("Schemata"), "test/schemata/fever.yaml"))
+schema = readschema(joinpath(dirname(pathof(Schemata)), "..", "test/schemata/fever.yaml"))
 
 # Or construct the schema within the code
 patientid = ColumnSchema(:patientid, "Patient ID",  UInt,   !CATEGORICAL, IS_REQUIRED,  IS_UNIQUE, UInt)
@@ -73,7 +73,7 @@ zipcode = ColumnSchema(:zipcode, "Zip code", Int, CATEGORICAL, !IS_REQUIRED, !IS
 insert_column!(schema.tables[:mytable], zipcode)
 
 # Write the updated schema to disk
-# TODO: writeschema(joinpath(Pkg.dir("Schemata"), "test/schemata/fever_updated.yaml"), schema)
+# TODO: writeschema(joinpath(dirname(pathof(Schemata)), "..", "test/schemata/fever_updated.yaml"), schema)
 
 # Add a corresponding (non-compliant) column to the data
 tbl[:zipcode] = ["11111", "22222", "33333", "NULL"];  # CSV file was supplied with "NULL" values, forcing eltype to be String.

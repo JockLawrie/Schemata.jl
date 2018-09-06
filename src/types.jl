@@ -5,7 +5,7 @@ mutable struct ColumnSchema
     is_categorical::Bool          # Specifies whether the values represent categories. If so, order is specified by valid_values.
     is_required::Bool             # Is non-missing data required?
     is_unique::Bool               # Is each value in the column unique?
-    valid_values::Union{DataType, Dict, <:Range, <:Vector}  # Either the full range of the data type or a user-supplied restriction.
+    valid_values::Union{DataType, Dict, <:AbstractRange, <:Vector}  # Either the full range of the data type or a user-supplied restriction.
 
     function ColumnSchema(name, description, eltyp, is_categorical, is_required, is_unique, valid_values)
         # Ensure eltyp is either a DataType or a Dict containing "type" => some_type
@@ -59,7 +59,7 @@ end
 
 get_datatype(vv::DataType) = vv
 get_datatype(vv::Dict)     = vv["type"]
-get_datatype(vv::Range)    = typeof(vv[1])
+get_datatype(vv::AbstractRange) = typeof(vv[1])
 get_datatype(vv::Vector)   = eltype(vv)
 
 
@@ -116,11 +116,11 @@ function construct_intrarow_constraints(dct::Dict)
     !haskey(dct, "intrarow_constraints") && return Tuple{String, Function}[]
     d = dct["intrarow_constraints"]
     n = length(d)
-    result = Vector{Tuple{String, Function}}(n)
+    result = Vector{Tuple{String, Function}}(undef, n)
     i = 0
     for (msg, func) in d
       s  = "(r) -> $(func)"
-      f  = eval(parse(s))
+      f  = eval(Meta.parse(s))
       i += 1
       result[i] = (msg, f)
     end

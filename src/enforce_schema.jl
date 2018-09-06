@@ -47,7 +47,7 @@ function enforce_schema(indata, tblschema::TableSchema, set_invalid_to_missing::
                 end
             end
             # Value has correct type, now check that value is in the valid range
-            if !is_invalid && (vv_type <: Vector || vv_type <: Range) && !value_is_valid(val, validvals)
+            if !is_invalid && (vv_type <: Vector || vv_type <: AbstractRange) && !value_is_valid(val, validvals)
                 is_invalid = true
             end
             # Record invalid value
@@ -78,7 +78,7 @@ function enforce_schema(indata, tblschema::TableSchema, set_invalid_to_missing::
 end
 
 value_is_valid(val, validvals::Vector) = in(val, validvals) ? true : false
-value_is_valid(val, validvals::Range)  = val >= validvals[1] && val <= validvals[end]  #Check only the end points for efficiency. TODO: Check interior points efficiently.
+value_is_valid(val, validvals::AbstractRange) = val >= validvals[1] && val <= validvals[end]  #Check only the end points for efficiency. TODO: Check interior points efficiently.
 
 
 "Returns: A table with unpopulated columns with name, type, length and order matching the table schema."
@@ -101,7 +101,7 @@ function parse_as_type(::Type{Date}, val::String)
     try
         Date(val[1:10])   # example: "2017-12-31"
     catch
-        eval(parse(val))  # example: "today() + Day(4)"
+        eval(Meta.parse(val))  # example: "today() + Day(4)"
     end
 end
 

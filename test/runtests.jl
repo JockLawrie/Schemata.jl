@@ -80,7 +80,7 @@ insert_column!(schema.tables[:mytable], zipcode)
 @test schema.tables[:mytable].columns[:zipcode] == zipcode
 
 # Write the updated schema to disk
-#schemafile = joinpath(Pkg.dir("Schemata"), "test/schemata/fever_updated.yaml")
+#schemafile = joinpath(dirname(pathof(Schemata)), "..", "test/schemata/fever_updated.yaml")
 #writeschema(schemafile, schema)
 #schema_from_disk = readschema(schemafile)
 #@test schema == schema_from_disk
@@ -111,7 +111,7 @@ tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
 ################################################################################
 # Test intra-row constraints
 function test_row_constraints()
-    filename = joinpath(Pkg.dir("Schemata"), "test/schemata/row_constraints.yaml")
+    filename = joinpath(dirname(pathof(Schemata)), "..", "test/schemata/row_constraints.yaml")
     schema   = readschema(filename)
     d = DataFrame(
                   patientid = UInt.([1,2,3]),
