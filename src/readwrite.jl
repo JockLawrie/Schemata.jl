@@ -51,7 +51,7 @@ end
 
 function convert_args_types(vec::Vector)
     nargs  = length(vec)
-    result = Vector{Any}(nargs)
+    result = Vector{Any}(undef, nargs)
     for i = 1:nargs
         try
             #result[i] = eval(Meta.parse("$(parentmodule(@__MODULE__)).$(vec[i])"))
@@ -117,9 +117,9 @@ For Base types a stringified range will work, E.g., `eval(Meta.parse("1:10"))` w
 For non-Base types this approach will fail.   E.g., `eval(Meta.parse("2017-10-01 09:00:2017-12-08 23:00"))` will fail.
 """
 function parse_nonbase_range(vv::String, eltyp)
-    assert(length(vv) >= 5)  # "(a,b)" contains 5 characters
-    assert(vv[1] == '(')
-    assert(vv[end] == ')')
+    @assert length(vv) >= 5  # "(a,b)" contains 5 characters
+    @assert vv[1] == '('
+    @assert vv[end] == ')'
     #= The next line (from the inner-most operation):
        - Removes parentheses
        - Splits on comma...returns Vector{SubString}
