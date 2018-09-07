@@ -29,7 +29,7 @@ Determine ColumnSchema.eltyp.
 """
 function determine_eltype(s::String)
     #eval(Meta.parse("$(parentmodule(@__MODULE__)).$(s)"))  # Prepend module for non-Base types
-    eval(Meta.parse(s))
+    eval(Meta.parse(s))  # Type is in Base
 end
 
 
@@ -37,7 +37,7 @@ function determine_eltype(d::Dict)
     d["type"] = try
         eval(Meta.parse("$(parentmodule(@__MODULE__)).$(d["type"])"))
     catch
-        eval(Meta.parse("Main.$(d["type"])"))
+        eval(Meta.parse("import $(d["type"])"))
     end
     if haskey(d, "args")
         d["args"] = convert_args_types(d["args"])
