@@ -39,14 +39,14 @@ mutable struct ColumnSchema
 end
 
 
-function ColumnSchema(dct::Dict)
-    name           = dct["name"]
-    descr          = dct["description"]
-    eltyp          = determine_eltype(dct["datatype"])
-    is_categorical = dct["categorical"]
-    is_required    = dct["required"]
-    is_unique      = dct["unique"]
-    validvalues    = determine_validvalues(dct["validvalues"], eltyp)
+function ColumnSchema(d::Dict)
+    name           = d["name"]
+    descr          = d["description"]
+    eltyp          = determine_eltype(d["datatype"])
+    is_categorical = d["categorical"]
+    is_required    = d["required"]
+    is_unique      = d["unique"]
+    validvalues    = determine_validvalues(d["validvalues"], eltyp)
     ColumnSchema(name, descr, eltyp, is_categorical, is_required, is_unique, validvalues)
 end
 
@@ -90,12 +90,12 @@ function TableSchema(name, description, columns::Vector{ColumnSchema}, primary_k
 end
 
 
-function TableSchema(dct::Dict)
-    name        = Symbol(dct["name"])
-    description = dct["description"]
-    pk          = dct["primary_key"]  # String or Vector{String}
+function TableSchema(d::Dict)
+    name        = Symbol(d["name"])
+    description = d["description"]
+    pk          = d["primary_key"]  # String or Vector{String}
     primary_key = typeof(pk) == String ? [Symbol(pk)] : [Symbol(colname) for colname in pk]
-    cols        = dct["columns"]
+    cols        = d["columns"]
     columns     = Dict{Symbol, ColumnSchema}()
     col_order   = fill(Symbol("x"), size(cols, 1))
     i = 0
@@ -107,14 +107,14 @@ function TableSchema(dct::Dict)
             columns[col_order[i]] = ColumnSchema(colschema)
         end
     end
-    intrarow_constraints = construct_intrarow_constraints(dct)
+    intrarow_constraints = construct_intrarow_constraints(d)
     TableSchema(name, description, columns, col_order, primary_key, intrarow_constraints)
 end
 
 
-function construct_intrarow_constraints(dct::Dict)
-    !haskey(dct, "intrarow_constraints") && return Tuple{String, Function}[]
-    d = dct["intrarow_constraints"]
+function construct_intrarow_constraints(d::Dict)
+    !haskey(d, "intrarow_constraints") && return Tuple{String, Function}[]
+    d = d["intrarow_constraints"]
     n = length(d)
     result = Vector{Tuple{String, Function}}(undef, n)
     i = 0
@@ -139,24 +139,17 @@ struct Schema
     end
 end
 
-function Schema(dct::Dict)
-    name = Symbol(dct["name"])
-    description = dct["description"]
+function Schema(d::Dict)
+    name = Symbol(d["name"])
+    description = d["description"]
     tables = Dict{Symbol, TableSchema}()
-    for (tblname, tblschema) in dct["tables"]
+    for (tblname, tblschema) in d["tables"]
         tblschema["name"]       = tblname
         tables[Symbol(tblname)] = TableSchema(tblschema)
     end
     Schema(name, description, tables)
 end
 
-#=
-struct Join
-    table1::Symbol
-    table2::Symbol
-    columns::Dict{Symbol, Symbol}  # table1.column => table2.column
-end
-=#
 
 ################################################################################
 ### Methods
