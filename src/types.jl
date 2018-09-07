@@ -33,7 +33,7 @@ mutable struct ColumnSchema
         # Ensure eltyp and valid_values are consistent with each other
         tp_eltyp     = get_datatype(eltyp)
         tp_validvals = get_datatype(valid_values)
-        tp_eltyp    != tp_validvals && error("Column :$name. Type of valid values ($tp_validvals) does not match that of eltype ($tp_eltyp).")
+        tp_eltyp    != tp_validvals && error("Column :$(name). Type of valid values ($(tp_validvals)) does not match that of eltype ($(tp_eltyp)).")
         new(name, description, eltyp, is_categorical, is_required, is_unique, valid_values)
     end
 end
@@ -74,9 +74,9 @@ struct TableSchema
 
     function TableSchema(name, description, columns, col_order, primary_key, intrarow_constraints=Function[])
         for colname in primary_key
-            !haskey(columns, colname) && error("Table :$name. Primary key has a non-existent column ($colname).")
+            !haskey(columns, colname) && error("Table :$(name). Primary key has a non-existent column ($(colname)).")
             colschema = columns[colname]
-            !colschema.is_required    && error("Table :$name. Primary key has a column ($colname) that allows missing data.")
+            !colschema.is_required    && error("Table :$(name). Primary key has a column ($(colname)) that allows missing data.")
         end
         new(name, description, columns, col_order, primary_key, intrarow_constraints)
     end

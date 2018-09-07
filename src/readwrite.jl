@@ -1,14 +1,14 @@
 function readschema(filename::String)
     # Read yaml
-    io  = open(filename)
-    dct = YAML.load(io)
+    io = open(filename)
+    d  = YAML.load(io)
     close(io)
-    length(dct) > 1 && error("File $(filename) contains an incorrectly specified schema.")
+    length(d) > 1 && error("File $(filename) contains an incorrectly specified schema.")
 
     # Get schema name
     schema = ""
     schema_name = ""
-    for (k, v) in dct
+    for (k, v) in d
         schema_name = k
         schema = v
         break
