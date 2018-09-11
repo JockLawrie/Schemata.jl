@@ -107,6 +107,14 @@ issues = diagnose(tbl, schema.tables[:mytable])
 tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
 @test size(issues, 1) == 0
 
+################################################################################
+# Test ZonedDateTime
+d = Dict("name"        => "somecol", "unique" => false, "required" => false, "description" => "descr","categorical" => false,
+         "datatype"    => Dict("args"=>["Y-m-d H:M", "Australia/Melbourne"], "type"=>"TimeZones.ZonedDateTime"),
+         "validvalues" => "(today()-Year(2), Day(1), today()+Year(1))")
+
+cs = ColumnSchema(d)
+
 
 ################################################################################
 # Test intra-row constraints

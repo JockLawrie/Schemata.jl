@@ -34,7 +34,7 @@ mutable struct ColumnSchema
         tp_eltyp     = get_datatype(eltyp)
         tp_validvals = get_datatype(valid_values)
         tp_eltyp    != tp_validvals && error("Column :$(name). Type of valid values ($(tp_validvals)) does not match that of eltype ($(tp_eltyp)).")
-        new(name, description, eltyp, is_categorical, is_required, is_unique, valid_values)
+        new(Symbol(name), description, eltyp, is_categorical, is_required, is_unique, valid_values)
     end
 end
 

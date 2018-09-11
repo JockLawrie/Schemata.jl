@@ -92,11 +92,6 @@ function init_compliant_data(tblschema::TableSchema, n::Int)
     result
 end
 
-
-parse_as_type(target_type, val::String) = parse(target_type, val)
-
-parse_as_type(target_type, val) = convert(target_type, val)
-
 function parse_as_type(::Type{Date}, val::String)
     try
         Date(val[1:10])   # example: "2017-12-31"
@@ -105,7 +100,7 @@ function parse_as_type(::Type{Date}, val::String)
     end
 end
 
-function parse_as_type(target_type::Dict, val::String)
+function parse_as_type(target_type::T1, val::T2) where {T1 <: Dict, T2 <: AbstractString}
     tp = target_type["type"]
     if haskey(target_type, "kwargs")
         tp(val, target_type["args"]...; target_type["kwargs"]...)
@@ -113,3 +108,20 @@ function parse_as_type(target_type::Dict, val::String)
         tp(val, target_type["args"]...)
     end
 end
+
+parse_as_type(target_type, val::String) = parse(target_type, val)
+
+parse_as_type(target_type, val) = convert(target_type, val)
+
+
+# This block enables a custom constructor of an existing non-Base type (TimeZones.ZonedDateTime)
+function TimeZones.ZonedDateTime(dt::T, fmt::String, tz::TimeZones.TimeZone) where {T <: AbstractString}
+    i = Int(Char(dt[1]))
+    if i >= 48 && i <= 57  # A digit in 0,1,...,9.
+        dt = replace(dt, "T" => " ")                    # Example: old value: "2017-12-31T09:29"; new value: "2017-12-31 09:29"
+        TimeZones.ZonedDateTime(DateTime(dt, fmt), tz)  # Example: dt = "2017-12-31 09:29"
+    else
+        TimeZones.ZonedDateTime(DateTime(eval(Meta.parse(dt))), tz)  # Example: dt = "today() + Day(2)"
+    end
+end
+TimeZones.ZonedDateTime(dt::T, fmt::String, tz::String) where {T <: AbstractString} = ZonedDateTime(dt, fmt, TimeZone(tz))
