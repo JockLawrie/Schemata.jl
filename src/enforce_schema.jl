@@ -92,7 +92,7 @@ function init_compliant_data(tblschema::TableSchema, n::Int)
     result
 end
 
-function parse_as_type(::Type{Date}, val::String)
+function parse_as_type(::Type{Date}, val::T) where {T <: AbstractString}
     try
         Date(val[1:10])   # example: "2017-12-31"
     catch
