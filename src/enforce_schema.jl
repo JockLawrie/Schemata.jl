@@ -117,7 +117,7 @@ parse_as_type(target_type, val) = convert(target_type, val)
 # This block enables a custom constructor of an existing non-Base type (TimeZones.ZonedDateTime)
 function TimeZones.ZonedDateTime(dt::T, fmt::String, tz::TimeZones.TimeZone) where {T <: AbstractString}
     i = Int(Char(dt[1]))
-    if i >= 48 && i <= 57  # A digit in 0,1,...,9.
+    if i >= 48 && i <= 57  # dt[1] is a digit in 0,1,...,9.
         dt = replace(dt, "T" => " ")                    # Example: old value: "2017-12-31T09:29"; new value: "2017-12-31 09:29"
         TimeZones.ZonedDateTime(DateTime(dt, fmt), tz)  # Example: dt = "2017-12-31 09:29"
     else
