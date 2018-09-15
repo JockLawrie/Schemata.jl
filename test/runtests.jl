@@ -2,6 +2,7 @@ using Test
 using Schemata
 using DataFrames
 using Dates
+using TimeZones
 
 
 ################################################################################
@@ -109,12 +110,21 @@ tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
 
 ################################################################################
 # Test ZonedDateTime
-d = Dict("name"        => "somecol", "unique" => false, "required" => false, "description" => "descr","categorical" => false,
+d = Dict("name"        => "zdt", "unique" => false, "required" => true, "description" => "descr","categorical" => false,
          "datatype"    => Dict("args"=>["Y-m-d H:M", "Australia/Melbourne"], "type"=>"TimeZones.ZonedDateTime"),
          "validvalues" => "(today()-Year(2), Day(1), today()+Year(1))")
+cs     = ColumnSchema(d)
+ts     = TableSchema(:mytable, "My table", [cs], [:zdt])
+schema = Schema(:myschema, "My schema", Dict(:mytable => ts))
 
-cs = ColumnSchema(d)
+tbl = DataFrame(zdt=[DateTime(today()) + Hour(i) for i = 1:3])
+target = [ZonedDateTime(tbl[i, :zdt], TimeZone("Australia/Melbourne")) for i = 1:3]
+tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
+@test tbl[:zdt] == target
 
+tbl = DataFrame(zdt=[string(DateTime(today()) + Hour(i)) for i = 1:3])  # String type
+tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
+@test tbl[:zdt] == target
 
 ################################################################################
 # Test intra-row constraints
