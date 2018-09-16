@@ -128,6 +128,14 @@ function TimeZones.ZonedDateTime(dt::T, fmt::String, tz::TimeZones.TimeZone) whe
         if !occursin("T", dt)
             dt = replace(dt, " " => "T")                # Example: old value: "2017-12-31T09:29"; new value: "2017-12-31 09:29"
         end
+
+        # Remove existing TimeZone
+        idx = findfirst(isequal('+'), dt)  # Example: "2016-11-08T13:15:00+11:00"
+        if idx != nothing
+            dt = dt[1:(idx-1)]             # Example: "2016-11-08T13:15:00"
+        end
+
+        # Convert String to DateTime
         dttm = try
             DateTime(dt)
         catch

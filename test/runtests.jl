@@ -126,6 +126,10 @@ tbl = DataFrame(zdt=[string(DateTime(today()) + Hour(i)) for i = 1:3])  # String
 tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
 @test tbl[:zdt] == target
 
+tbl = DataFrame(zdt=[string(ZonedDateTime(DateTime(today()) + Hour(i), TimeZone("Australia/Melbourne"))) for i = 1:3])  # String type
+tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
+@test tbl[:zdt] == target
+
 ################################################################################
 # Test intra-row constraints
 function test_row_constraints()
