@@ -1,17 +1,18 @@
 module Schemata
 
-export CATEGORICAL, IS_REQUIRED, IS_UNIQUE,  # constants
-       Schema, TableSchema, ColumnSchema,    # types
-       readschema, #writeschema,             # functions
-       diagnose, enforce_schema,             # functions
-       insert_column!                        # functions
+export CATEGORICAL, REQUIRED, UNIQUE,     # constants
+       Schema, TableSchema, ColumnSchema, # types
+       readschema, #writeschema,          # functions
+       diagnose, enforce_schema,          # functions
+       insert_column!                     # functions
 
 const CATEGORICAL = true
-const IS_REQUIRED = true
-const IS_UNIQUE   = true
+const REQUIRED    = true
+const UNIQUE      = true
 
-using Base.Dates
+using Dates
 using DataFrames
+using TimeZones
 using YAML
 
 include("types.jl")

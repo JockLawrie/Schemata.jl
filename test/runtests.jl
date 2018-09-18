@@ -1,16 +1,18 @@
-using Base.Test
+using Test
 using Schemata
 using DataFrames
+using Dates
+using TimeZones
 
 
 ################################################################################
 ### Test constructors 
-cs = ColumnSchema(:customer_id, "Customer ID", Int, !CATEGORICAL, IS_REQUIRED, IS_UNIQUE, 1:1_000_000)
+cs = ColumnSchema(:customer_id, "Customer ID", Int, !CATEGORICAL, REQUIRED, UNIQUE, 1:1_000_000)
 ts = TableSchema(:mytable, "My table", [cs], [:customer_id])
 schema = Schema(:myschema, "My data set", Dict(:mytable => ts))
 
-@test_throws ErrorException ColumnSchema(:customer_id, "Customer ID", Int, !CATEGORICAL, IS_REQUIRED, IS_UNIQUE, UInt)     # Int != UInt
-@test_throws ErrorException ColumnSchema(:new, "Customer is new", Char, CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, ["y", "n"])  # Char != String
+@test_throws ErrorException ColumnSchema(:customer_id, "Customer ID", Int, !CATEGORICAL, REQUIRED, UNIQUE, UInt)     # Int != UInt
+@test_throws ErrorException ColumnSchema(:new, "Customer is new", Char, CATEGORICAL, REQUIRED, !UNIQUE, ["y", "n"])  # Char != String
 @test_throws ErrorException TableSchema(:mytable, "My table", [cs], [:XXXcustomer_id])  # primary_key non-existent
 
 
@@ -18,14 +20,14 @@ schema = Schema(:myschema, "My data set", Dict(:mytable => ts))
 ### Compare DataFrame to Schema
 
 # Schema
-patientid = ColumnSchema(:patientid, "Patient ID",  UInt,   !CATEGORICAL, IS_REQUIRED,  IS_UNIQUE, UInt)
-age       = ColumnSchema(:age,       "Age (years)", Int,    !CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, Int)
-dose      = ColumnSchema(:dose,      "Dose size",   String,  CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, ["small", "medium", "large"])
-fever     = ColumnSchema(:fever,     "Had fever",   Bool,    CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, Bool)
+patientid = ColumnSchema(:patientid, "Patient ID",  UInt,   !CATEGORICAL, REQUIRED,  UNIQUE, UInt)
+age       = ColumnSchema(:age,       "Age (years)", Int,    !CATEGORICAL, REQUIRED, !UNIQUE, Int)
+dose      = ColumnSchema(:dose,      "Dose size",   String,  CATEGORICAL, REQUIRED, !UNIQUE, ["small", "medium", "large"])
+fever     = ColumnSchema(:fever,     "Had fever",   Bool,    CATEGORICAL, REQUIRED, !UNIQUE, Bool)
 ts        = TableSchema(:mytable, "My table", [patientid, age, dose, fever], [:patientid])
 schema    = Schema(:fever, "Fever schema", Dict(:mytable => ts))
 
-pid2 = ColumnSchema(:pid2, "Patient ID", UInt, !CATEGORICAL, !IS_REQUIRED, IS_UNIQUE, UInt)
+pid2 = ColumnSchema(:pid2, "Patient ID", UInt, !CATEGORICAL, !REQUIRED, UNIQUE, UInt)
 @test_throws ErrorException TableSchema(:mytable, "My table", [pid2, age, dose, fever], [:pid2])  # Primary key not unique
 
 # DataFrame
@@ -72,14 +74,14 @@ issues = diagnose(tbl, schema.tables[:mytable])
 @test size(issues, 1) == 0
 
 # Add a new column to the schema
-zipcode = ColumnSchema(:zipcode, "Zip code", Int, CATEGORICAL, !IS_REQUIRED, !IS_UNIQUE, 10000:99999)
+zipcode = ColumnSchema(:zipcode, "Zip code", Int, CATEGORICAL, !REQUIRED, !UNIQUE, 10000:99999)
 insert_column!(schema.tables[:mytable], zipcode)
 @test schema.tables[:mytable].col_order[end] == :zipcode
 @test haskey(schema.tables[:mytable].columns, :zipcode)
 @test schema.tables[:mytable].columns[:zipcode] == zipcode
 
 # Write the updated schema to disk
-#schemafile = joinpath(Pkg.dir("Schemata"), "test/schemata/fever_updated.yaml")
+#schemafile = joinpath(dirname(pathof(Schemata)), "..", "test/schemata/fever_updated.yaml")
 #writeschema(schemafile, schema)
 #schema_from_disk = readschema(schemafile)
 #@test schema == schema_from_disk
@@ -96,7 +98,7 @@ tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
 
 # Add a new column to the schema
 datatype = Dict("type" => Date, "args" => "Y-m-d")
-dosedate = ColumnSchema(:date, "Dose date", datatype, CATEGORICAL, !IS_REQUIRED, !IS_UNIQUE, datatype)
+dosedate = ColumnSchema(:date, "Dose date", datatype, CATEGORICAL, !REQUIRED, !UNIQUE, datatype)
 insert_column!(schema.tables[:mytable], dosedate)
 
 # Add a corresponding (compliant) column to the data
@@ -106,11 +108,32 @@ issues = diagnose(tbl, schema.tables[:mytable])
 tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
 @test size(issues, 1) == 0
 
+################################################################################
+# Test ZonedDateTime
+d = Dict("name"        => "zdt", "unique" => false, "required" => true, "description" => "descr","categorical" => false,
+         "datatype"    => Dict("args"=>["Y-m-d H:M", "Australia/Melbourne"], "type"=>"TimeZones.ZonedDateTime"),
+         "validvalues" => "(today()-Year(2), Day(1), today()+Year(1))")
+cs     = ColumnSchema(d)
+ts     = TableSchema(:mytable, "My table", [cs], [:zdt])
+schema = Schema(:myschema, "My schema", Dict(:mytable => ts))
+
+tbl = DataFrame(zdt=[DateTime(today()) + Hour(i) for i = 1:3])
+target = [ZonedDateTime(tbl[i, :zdt], TimeZone("Australia/Melbourne")) for i = 1:3]
+tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
+@test tbl[:zdt] == target
+
+tbl = DataFrame(zdt=[string(DateTime(today()) + Hour(i)) for i = 1:3])  # String type
+tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
+@test tbl[:zdt] == target
+
+tbl = DataFrame(zdt=[string(ZonedDateTime(DateTime(today()) + Hour(i), TimeZone("Australia/Melbourne"))) for i = 1:3])  # String type
+tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
+@test tbl[:zdt] == target
 
 ################################################################################
 # Test intra-row constraints
 function test_row_constraints()
-    filename = joinpath(Pkg.dir("Schemata"), "test/schemata/row_constraints.yaml")
+    filename = joinpath(dirname(pathof(Schemata)), "..", "test/schemata/row_constraints.yaml")
     schema   = readschema(filename)
     d = DataFrame(
                   patientid = UInt.([1,2,3]),

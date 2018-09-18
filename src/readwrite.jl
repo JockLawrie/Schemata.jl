@@ -1,14 +1,14 @@
 function readschema(filename::String)
     # Read yaml
-    io  = open(filename)
-    dct = YAML.load(io)
+    io = open(filename)
+    d  = YAML.load(io)
     close(io)
-    length(dct) > 1 && error("File $(filename) contains an incorrectly specified schema.")
+    length(d) > 1 && error("File $(filename) contains an incorrectly specified schema.")
 
     # Get schema name
     schema = ""
     schema_name = ""
-    for (k, v) in dct
+    for (k, v) in d
         schema_name = k
         schema = v
         break
@@ -28,16 +28,16 @@ end
 Determine ColumnSchema.eltyp.
 """
 function determine_eltype(s::String)
-    #eval(parse("$(module_parent(current_module())).$(s)"))  # Prepend module for non-Base types
-    eval(parse(s))
+    #eval(Meta.parse("$(parentmodule(@__MODULE__)).$(s)"))  # Prepend module for non-Base types
+    eval(Meta.parse(s))  # Type is in Base
 end
 
 
 function determine_eltype(d::Dict)
     d["type"] = try
-        eval(parse("$(module_parent(current_module())).$(d["type"])"))
+        eval(Meta.parse("$(parentmodule(@__MODULE__)).$(d["type"])"))
     catch
-        eval(parse("Main.$(d["type"])"))
+        eval(Meta.parse("import $(d["type"])"))
     end
     if haskey(d, "args")
         d["args"] = convert_args_types(d["args"])
@@ -51,11 +51,11 @@ end
 
 function convert_args_types(vec::Vector)
     nargs  = length(vec)
-    result = Vector{Any}(nargs)
+    result = Vector{Any}(undef, nargs)
     for i = 1:nargs
         try
-            #result[i] = eval(parse("$(module_parent(current_module())).$(vec[i])"))
-            result[i] = eval(parse(vec[i]))
+            #result[i] = eval(Meta.parse("$(parentmodule(@__MODULE__)).$(vec[i])"))
+            result[i] = eval(Meta.parse(vec[i]))
         catch
             result[i] = vec[i]
         end
@@ -84,9 +84,9 @@ vv could be a:
 function determine_vv(vv::String, eltyp)
     vv[1] == '(' && return parse_nonbase_range(vv, eltyp)
     result = try
-        eval(parse("$(module_parent(current_module())).$(vv)"))  # Prepend module for types
+        eval(Meta.parse("$(parentmodule(@__MODULE__)).$(vv)"))  # Prepend module for types
     catch
-        eval(parse(vv))  # Instances of types
+        eval(Meta.parse(vv))  # Instances of types
     end
     result
 end
@@ -113,13 +113,13 @@ If vv has 3 entries, the middle entry represents the step size; i.e., start:step
 
 Example: (2017-10-01 09:00, 2017-12-08 23:00), where the entries have type TimeZones.ZonedDateTime.
 
-For Base types a stringified range will work, E.g., `eval(parse("1:10"))` will return the range 1:10.
-For non-Base types this approach will fail.   E.g., `eval(parse("2017-10-01 09:00:2017-12-08 23:00"))` will fail.
+For Base types a stringified range will work, E.g., `eval(Meta.parse("1:10"))` will return the range 1:10.
+For non-Base types this approach will fail.   E.g., `eval(Meta.parse("2017-10-01 09:00:2017-12-08 23:00"))` will fail.
 """
 function parse_nonbase_range(vv::String, eltyp)
-    assert(length(vv) >= 5)  # "(a,b)" contains 5 characters
-    assert(vv[1] == '(')
-    assert(vv[end] == ')')
+    @assert length(vv) >= 5  # "(a,b)" contains 5 characters
+    @assert vv[1] == '('
+    @assert vv[end] == ')'
     #= The next line (from the inner-most operation):
        - Removes parentheses
        - Splits on comma...returns Vector{SubString}
@@ -132,7 +132,7 @@ function parse_nonbase_range(vv::String, eltyp)
     else
         val1 = parse_as_type(eltyp, vv[1])
         tp   = get_datatype(eltyp)
-        val2 = tp <: Base.Dates.TimeType ? eval(parse(vv[2])) : parse_as_type(eltyp, vv[2])  # HACK: middle value has type Dates.Period
+        val2 = tp <: Dates.TimeType ? eval(Meta.parse(vv[2])) : parse_as_type(eltyp, vv[2])  # HACK: middle value has type Dates.Period
         val3 = parse_as_type(eltyp, vv[3])
         return val1:val2:val3
     end

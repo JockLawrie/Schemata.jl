@@ -20,13 +20,13 @@ using DataFrames
 using Schemata
 
 # Read in the schema
-schema = readschema(joinpath(Pkg.dir("Schemata"), "test/schemata/fever.yaml"))
+schema = readschema(joinpath(dirname(pathof(Schemata)), "..", "test/schemata/fever.yaml"))
 
 # Or construct the schema within the code
-patientid = ColumnSchema(:patientid, "Patient ID",  UInt,   !CATEGORICAL, IS_REQUIRED,  IS_UNIQUE, UInt)
-age       = ColumnSchema(:age,       "Age (years)", Int,    !CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, Int)
-dose      = ColumnSchema(:dose,      "Dose size",   String,  CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, ["small", "medium", "large"])
-fever     = ColumnSchema(:fever,     "Had fever",   Bool,    CATEGORICAL, IS_REQUIRED, !IS_UNIQUE, Bool)
+patientid = ColumnSchema(:patientid, "Patient ID",  UInt,   !CATEGORICAL, REQUIRED,  UNIQUE, UInt)
+age       = ColumnSchema(:age,       "Age (years)", Int,    !CATEGORICAL, REQUIRED, !UNIQUE, Int)
+dose      = ColumnSchema(:dose,      "Dose size",   String,  CATEGORICAL, REQUIRED, !UNIQUE, ["small", "medium", "large"])
+fever     = ColumnSchema(:fever,     "Had fever",   Bool,    CATEGORICAL, REQUIRED, !UNIQUE, Bool)
 ts        = TableSchema(:mytable, "My table", [patientid, age, dose, fever], [:patientid])
 schema    = Schema(:fever, "Fever schema", Dict(:mytable => ts))
 
@@ -69,11 +69,11 @@ tbl[4, :age] = 44
 diagnose(tbl, schema.tables[:mytable])
 
 # Add a new column to the schema
-zipcode = ColumnSchema(:zipcode, "Zip code", Int, CATEGORICAL, !IS_REQUIRED, !IS_UNIQUE, 10000:99999)
+zipcode = ColumnSchema(:zipcode, "Zip code", Int, CATEGORICAL, !REQUIRED, !UNIQUE, 10000:99999)
 insert_column!(schema.tables[:mytable], zipcode)
 
 # Write the updated schema to disk
-# TODO: writeschema(joinpath(Pkg.dir("Schemata"), "test/schemata/fever_updated.yaml"), schema)
+# TODO: writeschema(joinpath(dirname(pathof(Schemata)), "..", "test/schemata/fever_updated.yaml"), schema)
 
 # Add a corresponding (non-compliant) column to the data
 tbl[:zipcode] = ["11111", "22222", "33333", "NULL"];  # CSV file was supplied with "NULL" values, forcing eltype to be String.
@@ -86,7 +86,7 @@ issues
 
 # Add a Date column to the schema; note the args in the datatype
 datatype = Dict("type" => Date, "args" => "Y-m-d")
-dosedate = ColumnSchema(:date, "Dose date", datatype, CATEGORICAL, !IS_REQUIRED, !IS_UNIQUE, datatype)
+dosedate = ColumnSchema(:date, "Dose date", datatype, CATEGORICAL, !REQUIRED, !UNIQUE, datatype)
 insert_column!(schema.tables[:mytable], dosedate)
 
 # Add a corresponding (compliant) column to the data

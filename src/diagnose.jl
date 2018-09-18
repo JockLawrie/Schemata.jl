@@ -13,7 +13,7 @@ Example result:
    col      gender     Invalid values ('d')
    table    mytable    Primary key not unique
 """
-function diagnose{T}(data::Dict{Symbol, T}, schema::Schema)
+function diagnose(data::Dict{Symbol, T}, schema::Schema) where {T}
     issues = Dict{Tuple{String, String}, Set{String}}()  # (entity, id) => Set(issue1, issue2, ...)
 
     # Ensure that the set of tables in the data matches that in the schema
@@ -133,7 +133,7 @@ function diagnose_column!(issues, tbl, colschema::ColumnSchema, tblname::String)
     !data_eltyp_isvalid && return  # Only do this check if the data type is valid
     tp = typeof(validvals)
     invalid_values = Set{schema_eltyp}()
-    if !(typeof(validvals) <: Dict) && (tp <: Dict || tp <: Vector || tp <: Range)  # eltype(valid_values) has implicitly been checked via the eltype check
+    if !(typeof(validvals) <: Dict) && (tp <: Dict || tp <: Vector || tp <: AbstractRange)  # eltype(valid_values) has implicitly been checked via the eltype check
         if typeof(coldata) <: CategoricalArray
             lvls = levels(coldata)
             for val in vals
