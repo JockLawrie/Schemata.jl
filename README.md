@@ -16,13 +16,12 @@ This package facilitates 3 use cases:
 # Usage
 
 ```julia
-using DataFrames
+# Read in a schema
 using Schemata
 
-# Read in the schema
 schema = readschema(joinpath(dirname(pathof(Schemata)), "..", "test/schemata/fever.yaml"))
 
-# Or construct the schema within the code
+# Alternatively, construct the schema within the code
 patientid = ColumnSchema(:patientid, "Patient ID",  UInt,   !CATEGORICAL, REQUIRED,  UNIQUE, UInt)
 age       = ColumnSchema(:age,       "Age (years)", Int,    !CATEGORICAL, REQUIRED, !UNIQUE, Int)
 dose      = ColumnSchema(:dose,      "Dose size",   String,  CATEGORICAL, REQUIRED, !UNIQUE, ["small", "medium", "large"])
@@ -30,7 +29,9 @@ fever     = ColumnSchema(:fever,     "Had fever",   Bool,    CATEGORICAL, REQUIR
 ts        = TableSchema(:mytable, "My table", [patientid, age, dose, fever], [:patientid])
 schema    = Schema(:fever, "Fever schema", Dict(:mytable => ts))
 
-# Data
+# Import some data
+using DataFrames
+
 tbl = DataFrame(
     patientid = [1, 2, 3, 4],
     age       = [11, 22, 33, 444],
@@ -42,8 +43,8 @@ tbl = DataFrame(
 diagnose(tbl, schema.tables[:mytable])
 
 # Modify the data to comply with the schema
-pool!(tbl, [:dose, :fever])                                  # Ensure :dose and :fever contain categorical data
-tbl[:patientid] = convert(DataArray{UInt}, tbl[:patientid])  # Change data type
+categorical!(tbl, [:dose, :fever])        # Make these columns categorical
+tbl[:patientid] = UInt.(tbl[:patientid])  # Change the data type from Int to UInt
 
 # Compare again
 diagnose(tbl, schema.tables[:mytable])
@@ -54,12 +55,12 @@ schema.tables[:mytable].columns[:age].valid_values = 0:120
 # Compare again
 diagnose(tbl, schema.tables[:mytable])  # Looks like a data entry error
 
-# Fix the data: Attempt 1 (do not set invalid values to NA)
+# Fix the data: Attempt 1 (do not set invalid values to missing)
 tbl, issues = enforce_schema(tbl, schema.tables[:mytable], false);
 tbl
 issues
 
-# Fix the data: Attempt 2 (set invalid values to NA)
+# Fix the data: Attempt 2 (set invalid values to missing)
 tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
 tbl
 issues
@@ -72,9 +73,6 @@ diagnose(tbl, schema.tables[:mytable])
 zipcode = ColumnSchema(:zipcode, "Zip code", Int, CATEGORICAL, !REQUIRED, !UNIQUE, 10000:99999)
 insert_column!(schema.tables[:mytable], zipcode)
 
-# Write the updated schema to disk
-# TODO: writeschema(joinpath(dirname(pathof(Schemata)), "..", "test/schemata/fever_updated.yaml"), schema)
-
 # Add a corresponding (non-compliant) column to the data
 tbl[:zipcode] = ["11111", "22222", "33333", "NULL"];  # CSV file was supplied with "NULL" values, forcing eltype to be String.
 diagnose(tbl, schema.tables[:mytable])
@@ -85,6 +83,8 @@ tbl
 issues
 
 # Add a Date column to the schema; note the args in the datatype
+using Dates
+
 datatype = Dict("type" => Date, "args" => "Y-m-d")
 dosedate = ColumnSchema(:date, "Dose date", datatype, CATEGORICAL, !REQUIRED, !UNIQUE, datatype)
 insert_column!(schema.tables[:mytable], dosedate)
@@ -93,7 +93,7 @@ insert_column!(schema.tables[:mytable], dosedate)
 tbl[:date] = ["2017-12-01", "2017-12-01", "2017-12-11", "2017-12-09"];
 diagnose(tbl, schema.tables[:mytable])
 tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
-tbl
+show(tbl, true)
 issues
 ```
 
@@ -110,4 +110,4 @@ issues
 
 5. Infer a simple `Schema` from a given data table.
 
-6. Remove dependence on DataFrames?
+6. Replace dependence on DataFrames with dependence on the `Tables` interface.
