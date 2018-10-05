@@ -1,8 +1,5 @@
 """
-Returns: Collection containing ways in which the table does not comply with the schema.
-
-Default collection is a vector of tuples.
-If DataFrames is defined the collection is a DataFrame.
+Returns: Vector of NamedTuples, each of which is a way in which the table does not comply with the schema.
 
 Example result:
 
