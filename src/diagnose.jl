@@ -14,26 +14,22 @@ Example result:
    table    mytable    Primary key not unique
 """
 function diagnose(data::Dict{Symbol, T}, schema::Schema) where {T}
-    issues = Dict{Tuple{String, String}, Set{String}}()  # (entity, id) => Set(issue1, issue2, ...)
+    issues = NamedTuple{(:entity, :id, :issue),Tuple{String,String,String}}[]
 
     # Ensure that the set of tables in the data matches that in the schema
     tblnames_data   = Set(keys(data))
     tblnames_schema = Set(keys(schema.tables))
     tbls = setdiff(tblnames_data, tblnames_schema)
-    if length(tbls) > 0
-        insert_issue!(issues, ("dataset",""), "Dataset has tables that the schema doesn't have ($(tbls)).")
-    end
+    length(tbls) > 0 && push!(issues, (entity="dataset", id="", issue="Dataset has tables that the schema doesn't have ($(tbls))."))
     tbls = setdiff(tblnames_schema, tblnames_data)
-    if length(tbls) > 0
-        insert_issue!(issues, ("dataset",""), "Dataset is missing some tables that the Schema has ($(tbls)).")
-    end
+    length(tbls) > 0 && push!(issues, (entity="dataset", id="", issue="Dataset is missing some tables that the Schema has ($(tbls))."))
 
     # Table and column level diagnoses
     for (tblname, tblschema) in schema.tables
         !haskey(data, tblname) && continue
         diagnose_table!(issues, data[tblname], tblschema)
     end
-    format_issues(issues)
+    issues
 end
 
 
@@ -51,20 +47,14 @@ function diagnose_table!(issues, tbl, tblschema::TableSchema)
     colnames_data   = Set(names(tbl))
     colnames_schema = Set(tblschema.col_order)
     cols = setdiff(colnames_data, colnames_schema)
-    if length(cols) > 0
-        insert_issue!(issues, ("table", tblname), "Data has columns that the schema doesn't have ($(cols)).")
-    end
+    length(cols) > 0 && push!(issues, (entity="table", id=tblname, issue="Data has columns that the schema doesn't have ($(cols))."))
     cols = setdiff(colnames_schema, colnames_data)
-    if length(cols) > 0
-        insert_issue!(issues, ("table", tblname), "Data is missing some columns that the Schema has ($(cols)).")
-    end
+    length(cols) > 0 && push!(issues, (entity="table", id=tblname, issue="Data is missing some columns that the Schema has ($(cols))."))
 
     # Ensure that the primary key is unique
     if isempty(setdiff(Set(tblschema.primary_key), colnames_data))  # Primary key cols exist in the data
-        pk = unique(tbl[:, tblschema.primary_key])
-        if size(pk, 1) != size(tbl, 1)
-            insert_issue!(issues, ("table", tblname), "Primary key not unique.")
-        end
+        pk = unique(tbl[tblschema.primary_key])
+        size(pk, 1) != size(tbl, 1) && push!(issues, (entity="table", id=tblname, issue="Primary key not unique."))
     end
 
     # Column-level issues
@@ -85,9 +75,9 @@ function diagnose_table!(issues, tbl, tblschema::TableSchema)
         end
         n_badrows == 0 && continue
         if n_badrows == 1
-            insert_issue!(issues, ("table", tblname), "1 row does not satisfy: $(msg)")
+            push!(issues, (entity="table", id=tblname, issue="1 row does not satisfy: $(msg)"))
         else
-            insert_issue!(issues, ("table", tblname), "$(n_badrows) rows do not satisfy: $(msg)")
+            push!(issues, (entity="table", id=tblname, issue="$(n_badrows) rows do not satisfy: $(msg)"))
         end
     end
 end
@@ -111,22 +101,22 @@ function diagnose_column!(issues, tbl, colschema::ColumnSchema, tblname::String)
     end
     if data_eltyp != schema_eltyp
         data_eltyp_isvalid = false
-        insert_issue!(issues, ("column", "$tblname.$colname"), "Data has eltype $(data_eltyp), schema requires $(schema_eltyp).")
+        push!(issues, (entity="column", id="$(tblname).$(colname)", issue="Data has eltype $(data_eltyp), schema requires $(schema_eltyp)."))
     end
 
     # Ensure categorical
-    if colschema.is_categorical && !(typeof(coldata) <: CategoricalArray)
-        insert_issue!(issues, ("column", "$tblname.$colname"), "Data is not categorical.")
+    if colschema.is_categorical && !(coldata isa CategoricalVector)
+        push!(issues, (entity="column", id="$(tblname).$(colname)", issue="Data is not categorical."))
     end
 
     # Ensure no missing data
     if colschema.is_required && in(missing, vals)
-        insert_issue!(issues, ("column", "$tblname.$colname"), "Missing data not allowed.")
+        push!(issues, (entity="column", id="$(tblname).$(colname)", issue="Missing data not allowed."))
     end
 
     # Ensure unique data
     if colschema.is_unique && length(vals) < size(coldata, 1)
-        insert_issue!(issues, ("column", "$tblname.$colname"), "Values are not unique.")
+        push!(issues, (entity="column", id="$(tblname).$(colname)", issue="Values are not unique."))
     end
 
     # Ensure valid values
@@ -151,78 +141,6 @@ function diagnose_column!(issues, tbl, colschema::ColumnSchema, tblname::String)
     if !isempty(invalid_values)
         invalid_values = [x for x in invalid_values]  # Convert Set to Vector
         sort!(invalid_values)
-        insert_issue!(issues, ("column", "$tblname.$colname"), "Invalid values: $(invalid_values)")
+        push!(issues, (entity="column", id="$(tblname).$(colname)", issue="Invalid values: $(invalid_values)"))
     end
-end
-
-
-"Init issues[k] if it doesn't already exist, then push msg to issues[k]."
-function insert_issue!(issues::Dict{Tuple{String, String}, Set{String}}, k::Tuple{String, String}, msg::String)
-    if !haskey(issues, k)
-        issues[k] = Set{String}()
-    end
-    push!(issues[k], msg)
-end
-
-
-function format_issues(issues)
-    # Count number of issues
-    nissues = 0
-    for (ety_id, issue_set) in issues
-        nissues += length(issue_set)
-    end
-
-    # Construct result
-    result = issues
-    if isdefined(Main, :DataFrame)
-        result = issues_to_dataframe(issues, nissues)
-    else
-        result = issues_to_vector(issues, nissues)
-    end
-    result
-end
-
-
-function issues_to_vector(issues, nissues::Int)
-    result = fill(("","",""), nissues)
-    i = 0
-    for (ety_id, issue_set) in issues
-        for iss in issue_set
-            i += 1
-            result[i] = (ety_id[1], ety_id[2], iss)
-        end
-    end
-    sort!(result)
-end
-
-
-function issues_to_dataframe(issues, nissues::Int)
-    result = DataFrame(entity = missings(String, nissues),
-                       id     = missings(String, nissues),
-                       issue  = missings(String, nissues))
-    i = 0
-    for (ety_id, issue_set) in issues
-        for iss in issue_set
-            i += 1
-            result[i, :entity] = ety_id[1]
-            result[i, :id]     = ety_id[2]
-            result[i, :issue]  = iss
-        end
-    end
-    sort!(result, (:entity, :id, :issue))
-end
-
-
-function issues_to_dataframe(issues::Vector{Tuple{String, String, String}})
-    nissues = size(issues, 1)
-    result  = DataFrame(entity = missings(String, nissues),
-                        id     = missings(String, nissues),
-                        issue  = missings(String, nissues))
-    for i = 1:nissues
-        issue = issues[i]
-        result[i, :entity] = issue[1]
-        result[i, :id]     = issue[2]
-        result[i, :issue]  = issue[3]
-    end
-    result
 end

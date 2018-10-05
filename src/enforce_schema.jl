@@ -1,13 +1,3 @@
-#=
-function enforce_schema!(indata, tblschema::TableSchema, set_invalid_to_missing::Bool)
-    # init: convert columns of indata where possible, ensure column order
-
-
-    issues
-end
-=#
-
-
 """
 Returns: table, issues
 
@@ -18,7 +8,7 @@ Otherwise the issues table contains the ways in which the output table does not 
 function enforce_schema(indata, tblschema::TableSchema, set_invalid_to_missing::Bool)
     n       = size(indata, 1)
     outdata = init_compliant_data(tblschema, n)
-    issues  = Dict{Tuple{String, String}, Set{String}}()  # (entity, id) => Set(issue1, issue2, ...)
+    issues  = NamedTuple{(:entity, :id, :issue),Tuple{String,String,String}}[]
     tblname = tblschema.name
 
     #=
@@ -66,19 +56,22 @@ function enforce_schema(indata, tblschema::TableSchema, set_invalid_to_missing::
         if !isempty(invalid_vals)
             invalid_vals = [x for x in invalid_vals]  # Convert Set to Vector
             sort!(invalid_vals)
-            insert_issue!(issues, ("column", "$tblname.$colname"), "Invalid values: $(invalid_vals)")
+            push!(issues, (entity="column", id="$(tblname).$(colname)", issue="Invalid values: $(invalid_vals)"))
         end
     end
 
     # Get remaining issues from the output table. Combine these with those found earlier.
-    issues = format_issues(issues)
     other_issues = diagnose(outdata, tblschema)
     issues = unique(vcat(issues, other_issues))
     outdata, issues
 end
 
-value_is_valid(val, validvals::Vector) = in(val, validvals) ? true : false
-value_is_valid(val, validvals::AbstractRange) = val >= validvals[1] && val <= validvals[end]  #Check only the end points for efficiency. TODO: Check interior points efficiently.
+value_is_valid(val, validvals::Vector) = in(val, validvals)
+value_is_valid(val, validvals::AbstractRange) = isless(validvals[1], val) && isless(val, validvals[end])  #Check only the end points for efficiency. TODO: Check interior points efficiently.
+
+function value_is_valid(val::T, validvals::AbstractRange) where {T <: CategoricalValue}
+    isless(validvals[1], get(val)) && isless(get(val), validvals[end]) #Check only the end points for efficiency. TODO: Check interior points efficiently.
+end
 
 
 "Returns: A table with unpopulated columns with name, type, length and order matching the table schema."
