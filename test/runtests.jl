@@ -110,6 +110,33 @@ tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
 ################################################################################
 # Test ZonedDateTime
 #=
+
+function my_zdt_parser(s::String, tz::String)
+    occursin(':', s) && return ZonedDateTime(DateTime(s[1:16]), TimeZone(tz))  # Example: s=2020-12-31T09:30:59+10:00
+    dt = Date(eval(Meta.parse(s)))  # Examples: s=today(), s=2020-11-01
+    ZonedDateTime(DateTime(dt), TimeZone(tz))
+end
+
+# obtained after reading yaml
+d = Dict("name"        => "zdt", "unique" => false, "required" => true, "description" => "descr","categorical" => false,
+         "datatype"    => "ZonedDateTime",
+         "validvalues" => "(today()-Year(2), Day(1), today()-Day(1))",
+         "parser"      => Dict("parser" => "my_zdt_parser", "args"=>["Australia/Melbourne"]))
+
+# need to eval datatype, validvalues and parser after reading in yaml but before constructing the schema
+d = Dict("name"        => "zdt", "unique" => false, "required" => true, "description" => "descr","categorical" => false,
+         "datatype"    => ZonedDateTime,
+         "validvalues" => zdttm1:Day(1):zdttm2,
+         "parser"      => Dict("parser" => my_zdt_parser, "args"=>["Australia/Melbourne"]))
+
+# Now the schema constructors can be used
+cs     = ColumnSchema(d)
+ts     = TableSchema(:mytable, "My table", [cs], [:zdt])
+schema = Schema(:myschema, "My schema", Dict(:mytable => ts))
+
+
+=#
+#=
 d = Dict("name"        => "zdt", "unique" => false, "required" => true, "description" => "descr","categorical" => false,
          "datatype"    => Dict("args"=>["Y-m-d H:M", "Australia/Melbourne"], "type"=>"TimeZones.ZonedDateTime"),
          "validvalues" => "(today()-Year(2), Day(1), today()+Year(1))")
