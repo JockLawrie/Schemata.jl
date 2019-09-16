@@ -50,7 +50,7 @@ function diagnose_table!(issues, tbl, tblschema::TableSchema)
 
     # Ensure that the primary key is unique
     if isempty(setdiff(Set(tblschema.primary_key), colnames_data))  # Primary key cols exist in the data
-        pk = unique(tbl[tblschema.primary_key])
+        pk = unique(tbl[!, tblschema.primary_key])
         size(pk, 1) != size(tbl, 1) && push!(issues, (entity="table", id=tblname, issue="Primary key not unique."))
     end
 
@@ -84,7 +84,7 @@ end
 function diagnose_column!(issues, tbl, colschema::ColumnSchema, tblname::String)
     # Collect basic column info
     colname   = colschema.name
-    coldata   = tbl[colname]
+    coldata   = tbl[!, colname]
     vals      = Set{Any}(coldata)  # Type qualifier {Any} allows missing to be a member of the set
     validvals = colschema.valid_values
 
@@ -94,7 +94,7 @@ function diagnose_column!(issues, tbl, colschema::ColumnSchema, tblname::String)
     if colschema.is_categorical
         data_eltyp = eltype(levels(coldata))
     else
-        data_eltyp = Missings.T(eltype(coldata))
+        data_eltyp = nonmissingtype(eltype(coldata))
     end
     if data_eltyp != schema_eltyp
         data_eltyp_isvalid = false

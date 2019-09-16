@@ -19,7 +19,7 @@ function enforce_schema(indata, tblschema::TableSchema, set_invalid_to_missing::
       - Set categorical columns where required
     =#
     for (colname, colschema) in tblschema.columns
-        !haskey(indata, colname) && continue  # Desired column not in indata; outdata will have a column of missings.
+        !hasproperty(indata, colname) && continue  # Desired column not in indata; outdata will have a column of missings.
         target_type  = colschema.eltyp
         validvals    = colschema.valid_values
         vv_type      = typeof(validvals)
@@ -45,7 +45,7 @@ function enforce_schema(indata, tblschema::TableSchema, set_invalid_to_missing::
                 push!(invalid_vals, val)
             end
             if !is_invalid || (is_invalid && !set_invalid_to_missing)
-                if typeof(val) == Missings.T(eltype(outdata[colname]))
+                if typeof(val) == nonmissingtype(eltype(outdata[!, colname]))
                     outdata[i, colname] = val
                 end
             end
@@ -80,7 +80,7 @@ function init_compliant_data(tblschema::TableSchema, n::Int)
     for colname in tblschema.col_order
         colschema = tblschema.columns[colname]
         eltyp     = eltype(colschema)
-        result[colname] = missings(eltyp, n)
+        result[!, colname] = missings(eltyp, n)
     end
     result
 end

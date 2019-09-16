@@ -47,7 +47,7 @@ categorical!(tbl, [:dose, :fever])  # Ensure :dose and :fever contain categorica
 issues = diagnose(tbl, schema.tables[:mytable])
 @test size(issues, 1) == 1
 
-tbl[:patientid] = convert(Vector{UInt}, tbl[:patientid])
+tbl[!, :patientid] = convert(Vector{UInt}, tbl[!, :patientid])
 issues = diagnose(tbl, schema.tables[:mytable])
 @test size(issues, 1) == 0
 
@@ -87,7 +87,7 @@ insert_column!(schema.tables[:mytable], zipcode)
 #@test schema == schema_from_disk
 
 # Add a corresponding (non-compliant) column to the data
-tbl[:zipcode] = ["11111", "22222", "33333", "NULL"];  # CSV file was supplied with "NULL" values, forcing eltype to be String.
+tbl[!, :zipcode] = ["11111", "22222", "33333", "NULL"];  # CSV file was supplied with "NULL" values, forcing eltype to be String.
 issues = diagnose(tbl, schema.tables[:mytable])
 @test size(issues, 1) == 2
 
@@ -102,7 +102,7 @@ dosedate = ColumnSchema(:date, "Dose date", datatype, CATEGORICAL, !REQUIRED, !U
 insert_column!(schema.tables[:mytable], dosedate)
 
 # Add a corresponding (compliant) column to the data
-tbl[:date] = ["2017-12-01", "2017-12-01", "2017-12-11", "2017-12-09"];
+tbl[!, :date] = ["2017-12-01", "2017-12-01", "2017-12-11", "2017-12-09"];
 issues = diagnose(tbl, schema.tables[:mytable])
 @test size(issues, 1) == 2
 tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
@@ -120,15 +120,15 @@ schema = Schema(:myschema, "My schema", Dict(:mytable => ts))
 tbl = DataFrame(zdt=[DateTime(today()) + Hour(i) for i = 1:3])
 target = [ZonedDateTime(tbl[i, :zdt], TimeZone("Australia/Melbourne")) for i = 1:3]
 tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
-@test tbl[:zdt] == target
+@test tbl[!, :zdt] == target
 
 tbl = DataFrame(zdt=[string(DateTime(today()) + Hour(i)) for i = 1:3])  # String type
 tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
-@test tbl[:zdt] == target
+@test tbl[!, :zdt] == target
 
 tbl = DataFrame(zdt=[string(ZonedDateTime(DateTime(today()) + Hour(i), TimeZone("Australia/Melbourne"))) for i = 1:3])  # String type
 tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
-@test tbl[:zdt] == target
+@test tbl[!, :zdt] == target
 
 ################################################################################
 # Test intra-row constraints
