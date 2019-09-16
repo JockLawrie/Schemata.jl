@@ -17,11 +17,6 @@ function readschema(filename::String)
     Schema(schema)
 end
 
-#=
-function writeschema(filename::String, schema::Schema)
-end
-=#
-
 ################################################################################
 ### Utils
 """

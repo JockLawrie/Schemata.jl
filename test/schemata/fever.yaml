@@ -3,7 +3,7 @@ fever:
   tables:
     mytable:
       description: "My table"
-      primary_key: patientid
+      primarykey: patientid
       columns:
       - patientid:
           description: Patient ID

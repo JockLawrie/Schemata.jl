@@ -21,7 +21,7 @@ function enforce_schema(indata, tblschema::TableSchema, set_invalid_to_missing::
     for (colname, colschema) in tblschema.columns
         !hasproperty(indata, colname) && continue  # Desired column not in indata; outdata will have a column of missings.
         target_type  = colschema.eltyp
-        validvals    = colschema.valid_values
+        validvals    = colschema.validvalues
         vv_type      = typeof(validvals)
         invalid_vals = Set{Any}()
         for i = 1:n
@@ -50,7 +50,7 @@ function enforce_schema(indata, tblschema::TableSchema, set_invalid_to_missing::
                 end
             end
         end
-        if colschema.is_categorical
+        if colschema.iscategorical
             categorical!(outdata, colname)
         end
         if !isempty(invalid_vals)
@@ -77,9 +77,9 @@ end
 "Returns: A table with unpopulated columns with name, type, length and order matching the table schema."
 function init_compliant_data(tblschema::TableSchema, n::Int)
     result = DataFrame()
-    for colname in tblschema.col_order
+    for colname in tblschema.columnorder
         colschema = tblschema.columns[colname]
-        eltyp     = eltype(colschema)
+        eltyp     = colschema.eltyp
         result[!, colname] = missings(eltyp, n)
     end
     result

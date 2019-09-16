@@ -19,5 +19,6 @@ include("types.jl")
 include("readwrite.jl")
 include("diagnose.jl")
 include("enforce_schema.jl")
+include("conveniences.jl")
 
 end

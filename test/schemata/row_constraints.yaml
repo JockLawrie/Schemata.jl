@@ -3,7 +3,7 @@ constraints:
   tables:
     dates:
       description: "Table with date constraints"
-      primary_key: patientid
+      primarykey: patientid
       intrarow_constraints: {birth date before marriage date: "r[:dob] < r[:date_of_marriage]"}
       columns:
       - patientid:

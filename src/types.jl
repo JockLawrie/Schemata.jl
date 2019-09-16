@@ -2,12 +2,13 @@ mutable struct ColumnSchema
     name::Symbol
     description::String
     eltyp::Union{DataType, Dict}  # The type of each value in the column. Dict contains "type"=>some_type, plus options.
-    is_categorical::Bool          # Specifies whether the values represent categories. If so, order is specified by valid_values.
-    is_required::Bool             # Is non-missing data required?
-    is_unique::Bool               # Is each value in the column unique?
-    valid_values::Union{DataType, Dict, <:AbstractRange, <:Vector}  # Either the full range of the data type or a user-supplied restriction.
+    iscategorical::Bool           # Specifies whether the values represent categories. If so, order is specified by valueorder.
+    isrequired::Bool              # Is non-missing data required?
+    isunique::Bool                # Is each value in the column unique?
+    validvalues::Union{DataType, <:AbstractRange, <:Set}  # Either the full range of the data type or a user-supplied restriction.
+    valueorder::Union{DataType, <:AbstractRange, <:Vector, Nothing}  # If iscategorical is true, valueorder specifies the ordering of the categories. Else nothing.
 
-    function ColumnSchema(name, description, eltyp, is_categorical, is_required, is_unique, valid_values)
+    function ColumnSchema(name, description, eltyp, iscategorical, isrequired, isunique, validvalues, valueorder)
         # Ensure eltyp is either a DataType or a Dict containing "type" => some_type
         tp_eltyp = typeof(eltyp)
         !(tp_eltyp == DataType || tp_eltyp <: Dict) && error("ColumnSchema eltype is neither a DataType nor a Dict.")
@@ -30,85 +31,88 @@ mutable struct ColumnSchema
             end
         end
 
-        # Ensure eltyp and valid_values are consistent with each other
+        # Ensure eltyp and validvalues are consistent with each other
         tp_eltyp     = get_datatype(eltyp)
-        tp_validvals = get_datatype(valid_values)
+        tp_validvals = get_datatype(validvalues)
         tp_eltyp    != tp_validvals && error("Column :$(name). Type of valid values ($(tp_validvals)) does not match that of eltype ($(tp_eltyp)).")
-        new(Symbol(name), description, eltyp, is_categorical, is_required, is_unique, valid_values)
+        new(Symbol(name), description, eltyp, iscategorical, isrequired, isunique, validvalues, valueorder)
     end
 end
 
 
+function ColumnSchema(name, description, eltyp, iscategorical, isrequired, isunique, validvalues)
+    valueorder  = iscategorical ? validvalues : nothing
+    validvalues = validvalues isa Vector ? Set(validvalues) : validvalues
+    ColumnSchema(name, description, eltyp, iscategorical, isrequired, isunique, validvalues, valueorder)
+end
+
+
 function ColumnSchema(d::Dict)
-    name           = d["name"]
-    descr          = d["description"]
-    eltyp          = determine_eltype(d["datatype"])
-    is_categorical = d["categorical"]
-    is_required    = d["required"]
-    is_unique      = d["unique"]
-    validvalues    = determine_validvalues(d["validvalues"], eltyp)
-    ColumnSchema(name, descr, eltyp, is_categorical, is_required, is_unique, validvalues)
+    name          = d["name"]
+    descr         = d["description"]
+    eltyp         = determine_eltype(d["datatype"])
+    iscategorical = d["categorical"]
+    isrequired    = d["required"]
+    isunique      = d["unique"]
+    valueorder    = determine_validvalues(d["validvalues"], eltyp)
+    validvalues   = valueorder isa Vector ? Set(valueorder) : valueorder
+    valueorder    = iscategorical ? valueorder : nothing
+    ColumnSchema(name, descr, eltyp, iscategorical, isrequired, isunique, validvalues, valueorder)
 end
 
 
-import Base.eltype
-"Get eltyp from existing ColumnSchema."
-function eltype(colschema::ColumnSchema)
-    get_datatype(colschema.eltyp)
-end
-
+get_datatype(vv::Dict)     = vv["type"]  # not applicable to validvalues
 get_datatype(vv::DataType) = vv
-get_datatype(vv::Dict)     = vv["type"]
-get_datatype(vv::AbstractRange) = typeof(vv[1])
-get_datatype(vv::Vector)   = eltype(vv)
+get_datatype(vv::Set)      = eltype(vv)
+get_datatype(vv::T) where {T <: AbstractRange} = typeof(vv[1])
 
 
 ################################################################################
 struct TableSchema
     name::Symbol
     description::String
-    columns::Dict{Symbol, ColumnSchema}     # colname => col_schema
-    col_order::Vector{Symbol}               # Determines the order of the columns
-    primary_key::Vector{Symbol}             # vector of column names
+    columns::Dict{Symbol, ColumnSchema}  # colname => col_schema
+    columnorder::Vector{Symbol}          # Determines the order of the columns
+    primarykey::Vector{Symbol}           # Vector of column names
     intrarow_constraints::Vector{Tuple{String, Function}}  # (msg, testfunc). Constraints between columns within a row (e.g., marriage date > birth date)
 
-    function TableSchema(name, description, columns, col_order, primary_key, intrarow_constraints=Function[])
-        for colname in primary_key
+    function TableSchema(name, description, columns, columnorder, primarykey, intrarow_constraints=Function[])
+        for colname in primarykey
             !haskey(columns, colname) && error("Table :$(name). Primary key has a non-existent column ($(colname)).")
             colschema = columns[colname]
-            !colschema.is_required    && error("Table :$(name). Primary key has a column ($(colname)) that allows missing data.")
+            !colschema.isrequired    && error("Table :$(name). Primary key has a column ($(colname)) that allows missing data.")
         end
-        new(name, description, columns, col_order, primary_key, intrarow_constraints)
+        new(name, description, columns, columnorder, primarykey, intrarow_constraints)
     end
 end
 
 
-function TableSchema(name, description, columns::Vector{ColumnSchema}, primary_key, intrarow_constraints=Function[])
-    col_order = [col.name for col in columns]
+function TableSchema(name, description, columns::Vector{ColumnSchema}, primarykey, intrarow_constraints=Function[])
+    columnorder = [col.name for col in columns]
     columns   = Dict(col.name => col for col in columns)
-    TableSchema(name, description, columns, col_order, primary_key, intrarow_constraints)
+    TableSchema(name, description, columns, columnorder, primarykey, intrarow_constraints)
 end
 
 
 function TableSchema(d::Dict)
     name        = Symbol(d["name"])
     description = d["description"]
-    pk          = d["primary_key"]  # String or Vector{String}
-    primary_key = typeof(pk) == String ? [Symbol(pk)] : [Symbol(colname) for colname in pk]
+    pk          = d["primarykey"]  # String or Vector{String}
+    primarykey = typeof(pk) == String ? [Symbol(pk)] : [Symbol(colname) for colname in pk]
     cols        = d["columns"]
     columns     = Dict{Symbol, ColumnSchema}()
-    col_order   = fill(Symbol("x"), size(cols, 1))
+    columnorder   = fill(Symbol("x"), size(cols, 1))
     i = 0
     for colname2schema in cols
         for (colname, colschema) in colname2schema
             i += 1
-            col_order[i]          = Symbol(colname)
-            colschema["name"]     = col_order[i]
-            columns[col_order[i]] = ColumnSchema(colschema)
+            columnorder[i]          = Symbol(colname)
+            colschema["name"]       = columnorder[i]
+            columns[columnorder[i]] = ColumnSchema(colschema)
         end
     end
     intrarow_constraints = construct_intrarow_constraints(d)
-    TableSchema(name, description, columns, col_order, primary_key, intrarow_constraints)
+    TableSchema(name, description, columns, columnorder, primarykey, intrarow_constraints)
 end
 
 
@@ -148,32 +152,4 @@ function Schema(d::Dict)
         tables[Symbol(tblname)] = TableSchema(tblschema)
     end
     Schema(name, description, tables)
-end
-
-
-################################################################################
-### Methods
-
-"Insert a column into the table schema at position n."
-function insert_column!(tblschema::TableSchema, colschema::ColumnSchema, n::Int=-1)
-    # Collect basic info
-    colname   = colschema.name
-    col_order = tblschema.col_order
-    n = n < 0 ? size(col_order, 1) + 1 : n  # Default: insert column at the end
-
-    # Remove column if it already exists
-    if haskey(tblschema.columns, colname)
-        n = findfirst(col_order, colname)  # new column will be inserted at the same position as the old column
-        splice!(col_order, n)
-    end
-
-    # Insert column
-    tblschema.columns[colname] = colschema
-    if n == size(col_order, 1) + 1     # Insert column at the end
-        push!(col_order, colname)
-    elseif n == 1                      # Insert column at the beginning
-        unshift!(col_order, colname)
-    else
-        splice!(col_order, n:(n-1), colname)
-    end
 end

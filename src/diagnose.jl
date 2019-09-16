@@ -42,15 +42,15 @@ function diagnose_table!(issues, tbl, tblschema::TableSchema)
     # Ensure the set of columns in the data matches that in the schema
     tblname         = String(tblschema.name)
     colnames_data   = Set(names(tbl))
-    colnames_schema = Set(tblschema.col_order)
+    colnames_schema = Set(tblschema.columnorder)
     cols = setdiff(colnames_data, colnames_schema)
     length(cols) > 0 && push!(issues, (entity="table", id=tblname, issue="Data has columns that the schema doesn't have ($(cols))."))
     cols = setdiff(colnames_schema, colnames_data)
     length(cols) > 0 && push!(issues, (entity="table", id=tblname, issue="Data is missing some columns that the Schema has ($(cols))."))
 
     # Ensure that the primary key is unique
-    if isempty(setdiff(Set(tblschema.primary_key), colnames_data))  # Primary key cols exist in the data
-        pk = unique(tbl[!, tblschema.primary_key])
+    if isempty(setdiff(Set(tblschema.primarykey), colnames_data))  # Primary key cols exist in the data
+        pk = unique(tbl[!, tblschema.primarykey])
         size(pk, 1) != size(tbl, 1) && push!(issues, (entity="table", id=tblname, issue="Primary key not unique."))
     end
 
@@ -86,12 +86,12 @@ function diagnose_column!(issues, tbl, colschema::ColumnSchema, tblname::String)
     colname   = colschema.name
     coldata   = tbl[!, colname]
     vals      = Set{Any}(coldata)  # Type qualifier {Any} allows missing to be a member of the set
-    validvals = colschema.valid_values
+    validvals = colschema.validvalues
 
     # Ensure correct eltype
     data_eltyp_isvalid = true
-    schema_eltyp = eltype(colschema)
-    if colschema.is_categorical
+    schema_eltyp = colschema.eltyp
+    if colschema.iscategorical
         data_eltyp = eltype(levels(coldata))
     else
         data_eltyp = nonmissingtype(eltype(coldata))
@@ -102,42 +102,42 @@ function diagnose_column!(issues, tbl, colschema::ColumnSchema, tblname::String)
     end
 
     # Ensure categorical
-    if colschema.is_categorical && !(coldata isa CategoricalVector)
+    if colschema.iscategorical && !(coldata isa CategoricalVector)
         push!(issues, (entity="column", id="$(tblname).$(colname)", issue="Data is not categorical."))
     end
 
     # Ensure no missing data
-    if colschema.is_required && in(missing, vals)
+    if colschema.isrequired && in(missing, vals)
         push!(issues, (entity="column", id="$(tblname).$(colname)", issue="Missing data not allowed."))
     end
 
     # Ensure unique data
-    if colschema.is_unique && length(vals) < size(coldata, 1)
+    if colschema.isunique && length(vals) < size(coldata, 1)
         push!(issues, (entity="column", id="$(tblname).$(colname)", issue="Values are not unique."))
     end
 
     # Ensure valid values
     !data_eltyp_isvalid && return  # Only do this check if the data type is valid
     tp = typeof(validvals)
-    invalid_values = Set{schema_eltyp}()
-    if !(typeof(validvals) <: Dict) && (tp <: Dict || tp <: Vector || tp <: AbstractRange)  # eltype(valid_values) has implicitly been checked via the eltype check
+    invalidvalues = Set{schema_eltyp}()
+    if !(typeof(validvals) <: Dict) && (tp <: Dict || tp <: Vector || tp <: AbstractRange)  # eltype(validvalues) has implicitly been checked via the eltype check
         if typeof(coldata) <: CategoricalArray
             lvls = levels(coldata)
             for val in vals
                 ismissing(val) && return
                 v = lvls[val.level]
-                !value_is_valid(v, validvals) && push!(invalid_values, v)
+                !value_is_valid(v, validvals) && push!(invalidvalues, v)
             end
         else
             for val in vals
                 ismissing(val) && return
-                !value_is_valid(val, validvals) && push!(invalid_values, val)
+                !value_is_valid(val, validvals) && push!(invalidvalues, val)
             end
         end
     end
-    if !isempty(invalid_values)
-        invalid_values = [x for x in invalid_values]  # Convert Set to Vector
-        sort!(invalid_values)
-        push!(issues, (entity="column", id="$(tblname).$(colname)", issue="Invalid values: $(invalid_values)"))
+    if !isempty(invalidvalues)
+        invalidvalues = [x for x in invalidvalues]  # Convert Set to Vector
+        sort!(invalidvalues)
+        push!(issues, (entity="column", id="$(tblname).$(colname)", issue="Invalid values: $(invalidvalues)"))
     end
 end
