@@ -1,17 +1,17 @@
 mutable struct ColumnSchema
     name::Symbol
     description::String
-    eltyp::Union{DataType, Dict}  # The type of each value in the column. Dict contains "type"=>some_type, plus options.
-    iscategorical::Bool           # Specifies whether the values represent categories. If so, order is specified by valueorder.
-    isrequired::Bool              # Is non-missing data required?
-    isunique::Bool                # Is each value in the column unique?
-    validvalues::Union{DataType, <:AbstractRange, <:Set}  # Either the full range of the data type or a user-supplied restriction.
+    eltyp::DataType      # The type of each value in the column. Dict contains "type"=>some_type, plus options.
+    iscategorical::Bool  # Specifies whether the values represent categories. If so, order is specified by valueorder.
+    isrequired::Bool     # Is non-missing data required?
+    isunique::Bool       # Is each value in the column unique?
+    validvalues::Union{DataType, <:AbstractRange, <:Set}             # Either the full range of the data type or a user-supplied restriction.
     valueorder::Union{DataType, <:AbstractRange, <:Vector, Nothing}  # If iscategorical is true, valueorder specifies the ordering of the categories. Else nothing.
 
     function ColumnSchema(name, description, eltyp, iscategorical, isrequired, isunique, validvalues, valueorder)
         # Ensure eltyp is either a DataType or a Dict containing "type" => some_type
+        #=
         tp_eltyp = typeof(eltyp)
-        !(tp_eltyp == DataType || tp_eltyp <: Dict) && error("ColumnSchema eltype is neither a DataType nor a Dict.")
         if tp_eltyp <: Dict
             !haskey(eltyp, "type") && error("Eltype is a Dict without pair type=>some_type.")
             typeof(eltyp["type"]) != DataType && error("Eltype is a Dict with pair type=>val, but val is not a DataType.")
@@ -30,11 +30,11 @@ mutable struct ColumnSchema
                 eltyp["kwargs"] = []
             end
         end
+        =#
 
         # Ensure eltyp and validvalues are consistent with each other
-        tp_eltyp     = get_datatype(eltyp)
         tp_validvals = get_datatype(validvalues)
-        tp_eltyp    != tp_validvals && error("Column :$(name). Type of valid values ($(tp_validvals)) does not match that of eltype ($(tp_eltyp)).")
+        eltyp != tp_validvals && error("Column :$(name). Type of valid values ($(tp_validvals)) does not match that of eltype ($(eltyp)).")
         new(Symbol(name), description, eltyp, iscategorical, isrequired, isunique, validvalues, valueorder)
     end
 end
@@ -50,7 +50,7 @@ end
 function ColumnSchema(d::Dict)
     name          = d["name"]
     descr         = d["description"]
-    eltyp         = determine_eltype(d["datatype"])
+    eltyp         = d["datatype"] isa DataType ? d["datatype"] : eval(Meta.parse(d["datatype"]))
     iscategorical = d["categorical"]
     isrequired    = d["required"]
     isunique      = d["unique"]
@@ -59,12 +59,6 @@ function ColumnSchema(d::Dict)
     valueorder    = iscategorical ? valueorder : nothing
     ColumnSchema(name, descr, eltyp, iscategorical, isrequired, isunique, validvalues, valueorder)
 end
-
-
-get_datatype(vv::Dict)     = vv["type"]  # not applicable to validvalues
-get_datatype(vv::DataType) = vv
-get_datatype(vv::Set)      = eltype(vv)
-get_datatype(vv::T) where {T <: AbstractRange} = typeof(vv[1])
 
 
 ################################################################################

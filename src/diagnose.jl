@@ -29,12 +29,7 @@ function diagnose(data::Dict{Symbol, T}, schema::Schema) where {T}
     issues
 end
 
-
-function diagnose(tbl, tblschema::TableSchema)
-    data   = Dict(tblschema.name => tbl)
-    schema = Schema(:xxx, "", Dict(tblschema.name => tblschema))
-    diagnose(data, schema)
-end
+diagnose(tbl, tblschema::TableSchema) = diagnose_table!(NamedTuple{(:entity, :id, :issue),Tuple{String,String,String}}[], tbl, tblschema)
 
 
 "Modified: issues"
@@ -77,6 +72,7 @@ function diagnose_table!(issues, tbl, tblschema::TableSchema)
             push!(issues, (entity="table", id=tblname, issue="$(n_badrows) rows do not satisfy: $(msg)"))
         end
     end
+    issues
 end
 
 

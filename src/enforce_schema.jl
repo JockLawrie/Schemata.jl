@@ -73,7 +73,6 @@ function value_is_valid(val::T, validvals::AbstractRange) where {T <: Categorica
     isless(validvals[1], get(val)) && isless(get(val), validvals[end]) #Check only the end points for efficiency. TODO: Check interior points efficiently.
 end
 
-
 "Returns: A table with unpopulated columns with name, type, length and order matching the table schema."
 function init_compliant_data(tblschema::TableSchema, n::Int)
     result = DataFrame()
@@ -84,62 +83,3 @@ function init_compliant_data(tblschema::TableSchema, n::Int)
     end
     result
 end
-
-function parse_as_type(::Type{Date}, val::T) where {T <: AbstractString}
-    try
-        Date(val[1:10])   # example: "2017-12-31"
-    catch
-        eval(Meta.parse(val))  # example: "today() + Day(4)"
-    end
-end
-
-function parse_as_type(target_type::T, val) where {T <: Dict}
-    tp = target_type["type"]
-    if haskey(target_type, "kwargs")
-        tp(val, target_type["args"]...; target_type["kwargs"]...)
-    else
-        tp(val, target_type["args"]...)
-    end
-end
-
-function parse_as_type(target_type, val)
-    try
-        parse(target_type, val)
-    catch
-        convert(target_type, val)
-    end
-end
-
-
-# This block enables a custom constructor of an existing non-Base type (TimeZones.ZonedDateTime)
-function TimeZones.ZonedDateTime(dt::T, fmt::String, tz::TimeZones.TimeZone) where {T <: AbstractString}
-    i = Int(Char(dt[1]))
-    if i >= 48 && i <= 57  # dt[1] is a digit in 0,1,...,9.
-        if !occursin("T", fmt)
-            fmt = replace(fmt, " " => "T")              # Example: old value: "Y-m-d H:M"; new value: "Y-m-dTH:M"
-        end
-        if !occursin("T", dt)
-            dt = replace(dt, " " => "T")                # Example: old value: "2017-12-31T09:29"; new value: "2017-12-31 09:29"
-        end
-
-        # Remove existing TimeZone
-        idx = findfirst(isequal('+'), dt)  # Example: "2016-11-08T13:15:00+11:00"
-        if idx != nothing
-            dt = dt[1:(idx-1)]             # Example: "2016-11-08T13:15:00"
-        end
-
-        # Convert String to DateTime
-        dttm = try
-            DateTime(dt)
-        catch
-            DateTime(dt, fmt)
-        end
-        TimeZones.ZonedDateTime(dttm, tz)  # Example: dt = "2017-12-31 09:29"
-    else
-        TimeZones.ZonedDateTime(DateTime(eval(Meta.parse(dt))), tz)  # Example: dt = "today() + Day(2)"
-    end
-end
-TimeZones.ZonedDateTime(dt::T, fmt::String, tz::String) where {T <: AbstractString} = ZonedDateTime(dt, fmt, TimeZone(tz))
-TimeZones.ZonedDateTime(dt::DateTime, fmt::String, tz) = ZonedDateTime(dt, tz)
-TimeZones.ZonedDateTime(dt::DateTime, tz::String)      = ZonedDateTime(dt, TimeZone(tz))
-TimeZones.ZonedDateTime(dt::Date, fmt::String, tz)     = ZonedDateTime(DateTime(dt), tz)
