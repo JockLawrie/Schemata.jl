@@ -100,14 +100,10 @@ issues
 
 # TODO
 
-1. Remove hard coded Date handling.
+1. Implement `writeschema` (requires a write function to be implemented in `YAML.jl`).
 
-2. Implement writeschema.
+2. Define joins between tables within a schema, which induce `intrarow_constraints` across tables.
 
-3. Implement `intrarow_constraints` for `TableSchema`.
+3. Infer a `Schema` from a given data table.
 
-4. Define joins between tables within a schema, as well as intrarow_constraints across tables.
-
-5. Infer a simple `Schema` from a given data table.
-
-6. Replace dependence on DataFrames with dependence on the `Tables` interface.
+4. Replace the dependence on DataFrames with dependence on the `Tables` interface.

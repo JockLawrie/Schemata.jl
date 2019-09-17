@@ -123,7 +123,7 @@ d = Dict("name"        => "zdt", "unique" => false, "required" => true, "descrip
          "validvalues" => "(today()-Year(2), Day(1), today()-Day(1))",
          "parser"      => Dict("parser" => "my_zdt_parser", "args"=>["Australia/Melbourne"]))
 
-# need to eval datatype, validvalues and parser after reading in yaml but before constructing the schema
+# need to eval datatype and parser after reading in yaml but before constructing the schema
 d = Dict("name"        => "zdt", "unique" => false, "required" => true, "description" => "descr","categorical" => false,
          "datatype"    => ZonedDateTime,
          "validvalues" => zdttm1:Day(1):zdttm2,

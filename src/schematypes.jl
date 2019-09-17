@@ -1,63 +1,46 @@
+module schematypes
+
+export ColumnSchema, TableSchema, Schema
+
 mutable struct ColumnSchema
     name::Symbol
     description::String
-    eltyp::DataType      # The type of each value in the column. Dict contains "type"=>some_type, plus options.
+    datatype::DataType   # The non-missing type of each value in the column
     iscategorical::Bool  # Specifies whether the values represent categories. If so, order is specified by valueorder.
     isrequired::Bool     # Is non-missing data required?
     isunique::Bool       # Is each value in the column unique?
     validvalues::Union{DataType, <:AbstractRange, <:Set}             # Either the full range of the data type or a user-supplied restriction.
-    valueorder::Union{DataType, <:AbstractRange, <:Vector, Nothing}  # If iscategorical is true, valueorder specifies the ordering of the categories. Else nothing.
+    valueorder::Union{DataType, <:AbstractRange, <:Vector, Nothing}  # If iscategorical, valueorder specifies the ordering of categories. Else nothing.
+    parser::Parser       # Specifies how values are parsed to non-base types
 
-    function ColumnSchema(name, description, eltyp, iscategorical, isrequired, isunique, validvalues, valueorder)
-        # Ensure eltyp is either a DataType or a Dict containing "type" => some_type
-        #=
-        tp_eltyp = typeof(eltyp)
-        if tp_eltyp <: Dict
-            !haskey(eltyp, "type") && error("Eltype is a Dict without pair type=>some_type.")
-            typeof(eltyp["type"]) != DataType && error("Eltype is a Dict with pair type=>val, but val is not a DataType.")
-
-            # Ensure keys "args" and "kwargs" have Vector values
-            if haskey(eltyp, "args") && !(typeof(eltyp["args"]) <: Vector)
-                eltyp["args"] = [eltyp["args"]]  # wrap in vector
-            end
-            if !haskey(eltyp, "args")
-                eltyp["args"] = []
-            end
-            if haskey(eltyp, "kwargs") && !(typeof(eltyp["kwargs"]) <: Vector)
-                eltyp["kwargs"] = [eltyp["kwargs"]]  # wrap in vector
-            end
-            if !haskey(eltyp, "kwargs")
-                eltyp["kwargs"] = []
-            end
-        end
-        =#
-
+    function ColumnSchema(name, description, datatype, iscategorical, isrequired, isunique, validvalues, valueorder, parser)
         # Ensure eltyp and validvalues are consistent with each other
         tp_validvals = get_datatype(validvalues)
-        eltyp != tp_validvals && error("Column :$(name). Type of valid values ($(tp_validvals)) does not match that of eltype ($(eltyp)).")
-        new(Symbol(name), description, eltyp, iscategorical, isrequired, isunique, validvalues, valueorder)
+        datatype != tp_validvals && error("Column :$(name). Type of valid values ($(tp_validvals)) does not match that of eltype ($(datatype)).")
+        new(Symbol(name), description, datatype, iscategorical, isrequired, isunique, validvalues, valueorder, parser)
     end
 end
 
 
-function ColumnSchema(name, description, eltyp, iscategorical, isrequired, isunique, validvalues)
+function ColumnSchema(name, description, datatype, iscategorical, isrequired, isunique, validvalues)
     valueorder  = iscategorical ? validvalues : nothing
     validvalues = validvalues isa Vector ? Set(validvalues) : validvalues
-    ColumnSchema(name, description, eltyp, iscategorical, isrequired, isunique, validvalues, valueorder)
+    ColumnSchema(name, description, datatype, iscategorical, isrequired, isunique, validvalues, valueorder)
 end
 
 
 function ColumnSchema(d::Dict)
     name          = d["name"]
-    descr         = d["description"]
-    eltyp         = d["datatype"] isa DataType ? d["datatype"] : eval(Meta.parse(d["datatype"]))
-    iscategorical = d["categorical"]
-    isrequired    = d["required"]
-    isunique      = d["unique"]
-    valueorder    = determine_validvalues(d["validvalues"], eltyp)
+    description   = d["description"]
+    datatype      = d["datatype"] isa DataType ? d["datatype"] : eval(Meta.parse(d["datatype"]))
+    parser        = haskey(d, "parser") ? Parser(d["parser"], datatype) : Parser(datatype)
+    iscategorical = d["iscategorical"]
+    isrequired    = d["isrequired"]
+    isunique      = d["isunique"]
+    valueorder    = parse_validvalues(parser, d["validvalues"])
     validvalues   = valueorder isa Vector ? Set(valueorder) : valueorder
     valueorder    = iscategorical ? valueorder : nothing
-    ColumnSchema(name, descr, eltyp, iscategorical, isrequired, isunique, validvalues, valueorder)
+    ColumnSchema(name, description, datatype, iscategorical, isrequired, isunique, validvalues, valueorder, parser)
 end
 
 
@@ -146,4 +129,6 @@ function Schema(d::Dict)
         tables[Symbol(tblname)] = TableSchema(tblschema)
     end
     Schema(name, description, tables)
+end
+
 end
