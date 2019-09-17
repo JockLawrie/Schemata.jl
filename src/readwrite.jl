@@ -1,3 +1,11 @@
+module readwrite
+
+export readschema
+
+using YAML
+using ..schematypes
+
+
 function readschema(filename::String)
     # Read yaml
     io = open(filename)
@@ -15,4 +23,6 @@ function readschema(filename::String)
     end
     schema["name"] = schema_name
     Schema(schema)
+end
+
 end

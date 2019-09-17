@@ -9,21 +9,21 @@ constraints:
       - patientid:
           description: Patient ID
           datatype: UInt
-          categorical: false
-          required: true
-          unique: true
+          iscategorical: false
+          isrequired: true
+          isunique: true
           validvalues: UInt
       - dob:
           description: Date of birth
           datatype: Date
-          categorical: false
-          required: true
-          unique: false
+          iscategorical: false
+          isrequired: true
+          isunique: false
           validvalues: Date
       - date_of_marriage:
           description: Date of marriage 
           datatype: Date
-          categorical: false
-          required: false
-          unique: false
+          iscategorical: false
+          isrequired: false
+          isunique: false
           validvalues: Date

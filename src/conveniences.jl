@@ -1,3 +1,10 @@
+module conveniences
+
+export insert_column!
+
+using ..schematypes
+
+
 "Insert a column into the table schema at position n."
 function insert_column!(tblschema::TableSchema, colschema::ColumnSchema, n::Int=-1)
     # Collect basic info
@@ -22,3 +29,4 @@ function insert_column!(tblschema::TableSchema, colschema::ColumnSchema, n::Int=
     end
 end
 
+end

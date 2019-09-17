@@ -2,7 +2,6 @@ using Test
 using Schemata
 using DataFrames
 using Dates
-using TimeZones
 
 
 ################################################################################
@@ -13,7 +12,7 @@ schema = Schema(:myschema, "My data set", Dict(:mytable => ts))
 
 @test_throws ErrorException ColumnSchema(:customer_id, "Customer ID", Int, !CATEGORICAL, REQUIRED, UNIQUE, UInt)     # Int != UInt
 @test_throws ErrorException ColumnSchema(:new, "Customer is new", Char, CATEGORICAL, REQUIRED, !UNIQUE, ["y", "n"])  # Char != String
-@test_throws ErrorException TableSchema(:mytable, "My table", [cs], [:XXXcustomer_id])  # primary_key non-existent
+@test_throws ErrorException TableSchema(:mytable, "My table", [cs], [:XXXcustomer_id])  # primarykey non-existent
 
 
 ################################################################################
@@ -110,6 +109,7 @@ tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
 ################################################################################
 # Test ZonedDateTime
 #=
+using TimeZones
 
 function my_zdt_parser(s::String, tz::String)
     occursin(':', s) && return ZonedDateTime(DateTime(s[1:16]), TimeZone(tz))  # Example: s=2020-12-31T09:30:59+10:00
@@ -133,9 +133,9 @@ d = Dict("name"        => "zdt", "unique" => false, "required" => true, "descrip
 cs     = ColumnSchema(d)
 ts     = TableSchema(:mytable, "My table", [cs], [:zdt])
 schema = Schema(:myschema, "My schema", Dict(:mytable => ts))
-
-
 =#
+
+
 #=
 d = Dict("name"        => "zdt", "unique" => false, "required" => true, "description" => "descr","categorical" => false,
          "datatype"    => Dict("args"=>["Y-m-d H:M", "Australia/Melbourne"], "type"=>"TimeZones.ZonedDateTime"),
@@ -157,6 +157,7 @@ tbl = DataFrame(zdt=[string(ZonedDateTime(DateTime(today()) + Hour(i), TimeZone(
 tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
 @test tbl[!, :zdt] == target
 =#
+
 ################################################################################
 # Test intra-row constraints
 function test_row_constraints()

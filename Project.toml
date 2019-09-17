@@ -4,8 +4,10 @@ authors = ["Jock Lawrie <jock.lawrie@gmail.com>"]
 version = "1.0.2"
 
 [deps]
+CategoricalArrays = "324d7699-5711-5eae-9e2f-1d82baa6b597"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+Parsers = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
 YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 
 [extras]

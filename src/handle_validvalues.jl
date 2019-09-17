@@ -1,11 +1,22 @@
 module handle_validvalues
 
-export parse_validvalues, get_datatype
+export parse_validvalues, get_datatype, value_is_valid
+
+using CategoricalArrays
+using Dates
+
+using ..CustomParsers
 
 "Returns: The type of each valid value (after validvalues has been parsed)."
 get_datatype(validvalues::DataType) = validvalues
 get_datatype(validvalues::Set)      = eltype(validvalues)
 get_datatype(validvalues::T) where {T <: AbstractRange} = typeof(validvalues[1])
+
+
+"Returns: True if value is in validvalues"
+value_is_valid(value, validvalues::DataType) = typeof(value) == validvalues
+value_is_valid(value, validvalues) = in(value, validvalues)
+value_is_valid(value::T, validvalues) where {T <: CategoricalValue} = in(get(value), validvalues)
 
 
 """
@@ -16,9 +27,14 @@ validvalues could be a:
 - Range of a Core type. E.g., "1:10"
 - Range of a non-Core type, represented with a tuple: "(val1, stepsize, val2)"
 """
-function parse_validvalues(parser::Parser, validvalues::String)
+function parse_validvalues(parser::CustomParser, validvalues::String)
     validvalues[1] == '(' && return parse_noncore_range(parser, validvalues)  # Range of a non-Core type
-    validvalues == string(parser.returntype) && return parser.returntype      # DataType
+
+    # DataType
+    try
+        eval(Meta.parse(validvalues)) == parser.returntype && return parser.returntype  # "Int" becomes Int64
+    catch e
+    end
 
     # Range of a Core type
     vals = strip.(String.(split(validvalues, ':')))
@@ -33,7 +49,7 @@ function parse_validvalues(parser::Parser, validvalues::String)
 end
 
 
-function parse_validvalues(parser::Parser, validvalues::T) where {T <: Vector}
+function parse_validvalues(parser::CustomParser, validvalues::T) where {T <: Vector}
     eltype(validvalues) == parser.returntype ? validvalues : [parse(parser, x) for x in validvalues]
 end
 
@@ -45,7 +61,7 @@ The format is: "(start, stepsize, stop)"
 
 Example: (2017-10-01 09:00+10:00, Day(1), 2017-12-08 23:00+10:00), where the entries have type TimeZones.ZonedDateTime.
 """
-function parse_noncore_range(parser::Parser, validvalues::String)
+function parse_noncore_range(parser::CustomParser, validvalues::String)
     @assert length(validvalues) >= 5  # "(a,b)" contains 5 characters
     @assert validvalues[1] == '('
     @assert validvalues[end] == ')'

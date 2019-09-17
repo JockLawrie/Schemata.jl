@@ -4,23 +4,27 @@ export CATEGORICAL, REQUIRED, UNIQUE,     # constants
        Schema, TableSchema, ColumnSchema, # types
        diagnose, enforce_schema,          # functions
        insert_column!,                    # functions
-       readschema #writeschema,          # functions
+       readschema #writeschema,           # functions
 
 const CATEGORICAL = true
 const REQUIRED    = true
 const UNIQUE      = true
 
-using Dates
-using DataFrames
-using YAML
-
-include("customparsers.jl")
+include("CustomParsers.jl")
 include("handle_validvalues.jl")
 include("schematypes.jl")
 include("diagnose.jl")
 include("enforce_schema.jl")
 include("conveniences.jl")
 include("readwrite.jl")
+
+using .CustomParsers
+using .handle_validvalues
+using .schematypes
+using .diagnosedata
+using .enforce
+using .conveniences
+using .readwrite
 
 #=
 # This block enables a custom constructor of an existing non-Base type (TimeZones.ZonedDateTime)

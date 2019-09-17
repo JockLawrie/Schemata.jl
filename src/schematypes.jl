@@ -2,16 +2,22 @@ module schematypes
 
 export ColumnSchema, TableSchema, Schema
 
+using Dates
+
+using ..CustomParsers
+using ..handle_validvalues
+
+
 mutable struct ColumnSchema
     name::Symbol
     description::String
-    datatype::DataType   # The non-missing type of each value in the column
-    iscategorical::Bool  # Specifies whether the values represent categories. If so, order is specified by valueorder.
-    isrequired::Bool     # Is non-missing data required?
-    isunique::Bool       # Is each value in the column unique?
+    datatype::DataType    # The non-missing type of each value in the column
+    iscategorical::Bool   # Specifies whether the values represent categories. If so, order is specified by valueorder.
+    isrequired::Bool      # Is non-missing data required?
+    isunique::Bool        # Is each value in the column unique?
     validvalues::Union{DataType, <:AbstractRange, <:Set}             # Either the full range of the data type or a user-supplied restriction.
     valueorder::Union{DataType, <:AbstractRange, <:Vector, Nothing}  # If iscategorical, valueorder specifies the ordering of categories. Else nothing.
-    parser::Parser       # Specifies how values are parsed to non-base types
+    parser::CustomParser  # Specifies how values are parsed to non-base types
 
     function ColumnSchema(name, description, datatype, iscategorical, isrequired, isunique, validvalues, valueorder, parser)
         # Ensure eltyp and validvalues are consistent with each other
@@ -25,15 +31,19 @@ end
 function ColumnSchema(name, description, datatype, iscategorical, isrequired, isunique, validvalues)
     valueorder  = iscategorical ? validvalues : nothing
     validvalues = validvalues isa Vector ? Set(validvalues) : validvalues
-    ColumnSchema(name, description, datatype, iscategorical, isrequired, isunique, validvalues, valueorder)
+    parser      = CustomParser(datatype)
+    ColumnSchema(name, description, datatype, iscategorical, isrequired, isunique, validvalues, valueorder, parser)
 end
 
 
 function ColumnSchema(d::Dict)
+    datatype = d["datatype"] isa DataType ? d["datatype"] : eval(Meta.parse(d["datatype"]))
+    if haskey(d, "parser") && !haskey(d["parser"], "returntype")
+        d["parser"]["returntype"] = datatype
+    end
     name          = d["name"]
     description   = d["description"]
-    datatype      = d["datatype"] isa DataType ? d["datatype"] : eval(Meta.parse(d["datatype"]))
-    parser        = haskey(d, "parser") ? Parser(d["parser"], datatype) : Parser(datatype)
+    parser        = haskey(d, "parser") ? CustomParser(d["parser"]) : CustomParser(datatype)
     iscategorical = d["iscategorical"]
     isrequired    = d["isrequired"]
     isunique      = d["isunique"]

@@ -1,3 +1,12 @@
+module diagnosedata
+
+export diagnose
+
+using CategoricalArrays
+
+using ..handle_validvalues
+using ..schematypes
+
 """
 Returns: Vector of NamedTuples, each of which is a way in which the table does not comply with the schema.
 
@@ -86,11 +95,11 @@ function diagnose_column!(issues, tbl, colschema::ColumnSchema, tblname::String)
 
     # Ensure correct eltype
     data_eltyp_isvalid = true
-    schema_eltyp = colschema.eltyp
+    schema_eltyp = colschema.datatype
     if colschema.iscategorical
         data_eltyp = eltype(levels(coldata))
     else
-        data_eltyp = nonmissingtype(eltype(coldata))
+        data_eltyp = Core.Compiler.typesubtract(eltype(coldata), Missing)
     end
     if data_eltyp != schema_eltyp
         data_eltyp_isvalid = false
@@ -136,4 +145,6 @@ function diagnose_column!(issues, tbl, colschema::ColumnSchema, tblname::String)
         sort!(invalidvalues)
         push!(issues, (entity="column", id="$(tblname).$(colname)", issue="Invalid values: $(invalidvalues)"))
     end
+end
+
 end
