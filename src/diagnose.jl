@@ -93,17 +93,15 @@ function diagnose_column!(issues, tbl, colschema::ColumnSchema, tblname::String)
     vals      = Set{Any}(coldata)  # Type qualifier {Any} allows missing to be a member of the set
     validvals = colschema.validvalues
 
-    # Ensure correct eltype
-    data_eltyp_isvalid = true
-    schema_eltyp = colschema.datatype
+    # Ensure correct datatype
+    colschema_datatype = colschema.datatype
     if colschema.iscategorical
         data_eltyp = eltype(levels(coldata))
     else
         data_eltyp = Core.Compiler.typesubtract(eltype(coldata), Missing)
     end
-    if data_eltyp != schema_eltyp
-        data_eltyp_isvalid = false
-        push!(issues, (entity="column", id="$(tblname).$(colname)", issue="Data has eltype $(data_eltyp), schema requires $(schema_eltyp)."))
+    if data_eltyp != colschema_datatype
+        push!(issues, (entity="column", id="$(tblname).$(colname)", issue="Data has eltype $(data_eltyp), schema requires $(colschema_datatype)."))
     end
 
     # Ensure categorical
@@ -122,22 +120,22 @@ function diagnose_column!(issues, tbl, colschema::ColumnSchema, tblname::String)
     end
 
     # Ensure valid values
-    !data_eltyp_isvalid && return  # Only do this check if the data type is valid
-    tp = typeof(validvals)
-    invalidvalues = Set{schema_eltyp}()
-    if !(typeof(validvals) <: Dict) && (tp <: Dict || tp <: Vector || tp <: AbstractRange)  # eltype(validvalues) has implicitly been checked via the eltype check
-        if typeof(coldata) <: CategoricalArray
-            lvls = levels(coldata)
-            for val in vals
-                ismissing(val) && return
-                v = lvls[val.level]
-                !value_is_valid(v, validvals) && push!(invalidvalues, v)
-            end
-        else
-            for val in vals
-                ismissing(val) && return
-                !value_is_valid(val, validvals) && push!(invalidvalues, val)
-            end
+    data_eltyp != colschema_datatype && return  # Only check values are valid if the values' data type is valid
+    validvals isa DataType           && return  # validvals == colschema.datatype and colschema.datatype == data_eltyp 
+    invalidvalues = Set{colschema_datatype}()
+    if coldata isa CategoricalArray
+        lvls = levels(coldata)
+        for val in vals
+            ismissing(val) && continue
+            v = lvls[val.level]
+            !value_is_valid(v, validvals) && push!(invalidvalues, v)
+            length(invalidvalues) == 5 && break  # Record a maximum of 5 invalid values in the issues table
+        end
+    else
+        for val in vals
+            ismissing(val) && continue
+            !value_is_valid(val, validvals) && push!(invalidvalues, val)
+            length(invalidvalues) == 5 && break  # Record a maximum of 5 invalid values in the issues table
         end
     end
     if !isempty(invalidvalues)
