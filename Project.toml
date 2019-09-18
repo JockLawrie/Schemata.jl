@@ -1,7 +1,7 @@
 name = "Schemata"
 uuid = "7a3bc072-b1d0-11e8-119a-ff8667fa4841"
 authors = ["Jock Lawrie <jock.lawrie@gmail.com>"]
-version = "1.0.2"
+version = "1.1.0"
 
 [deps]
 CategoricalArrays = "324d7699-5711-5eae-9e2f-1d82baa6b597"
@@ -16,3 +16,6 @@ TimeZones = "f269a46b-ccf7-5d73-abea-4c690281aa53"
 
 [targets]
 test = ["Test", "TimeZones"]
+
+[compat]
+julia = "1"
