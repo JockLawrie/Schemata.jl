@@ -1,5 +1,5 @@
 """
-CustomParsers extends the functionality of `Parsers` allowing users to provide custom parsers.
+CustomParsers extends the functionality of `Parsers` by allowing users to provide custom parsers.
 
 Calling `parse(parser, value)` returns a value with type `parser.returntype`.
 
