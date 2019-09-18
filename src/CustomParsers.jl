@@ -1,10 +1,10 @@
 """
-CustomParsers extends the functionality of `Parsers` by allowing users to provide custom parsers.
-
-Calling `parse(parser, value)` returns a value with type `parser.returntype`.
+CustomParsers extends the functionality of the `Parsers` package by allowing users to provide custom parsers.
 
 In particular, users can parse values with types that are not in Julia's `Core` module.
 Users can also use the interface to parse `Core` types in non-standard ways, as well as in standard ways.
+
+Calling `parse(parser, value)` returns a value with type `parser.returntype`.
 """
 module CustomParsers
 

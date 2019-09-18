@@ -99,13 +99,24 @@ issues
 
 # Custom Parsers
 
-The submodule `CustomParsers` extends the functionality of `Parsers.jl` by allowing users to provide custom parsers.
-
-Calling `parse(parser, value)` returns a value with type `parser.returntype`.
-
+The submodule `CustomParsers` extends the functionality of the `Parsers` package by allowing users to provide custom parsers.
 In particular, users can parse values with types that are not in Julia's `Core` module.
 Users can also use the interface to parse `Core` types in non-standard ways, as well as in standard ways.
 
+A `CustomParser` has the form:
+
+```julia
+struct CustomParser
+    func::Function
+    args::Vector
+    kwargs::Dict
+    returntype::DataType
+end
+```
+
+Calling `parse(my_custom_parser, value)` returns a value with type `my_custom_parser.returntype`.
+
+A `CustomParser` can be constructed from a `Dict`, and therefore can be specified in a config (yaml) file.
 For example, the following code (from the test suite) defines a `CustomParser` for a `ZonedDateTime` (from the `TimeZones` package).
 
 ```julia
