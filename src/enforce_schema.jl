@@ -1,14 +1,28 @@
+module enforce
+
+export enforce_schema
+
+using CategoricalArrays
+using DataFrames
+
+using ..CustomParsers
+using ..handle_validvalues
+using ..schematypes
+using ..diagnosedata
+
+
 """
 Returns: table, issues
 
-The table is as compliant as possible with the schema.
+The returned table is as compliant as possible with the schema.
 If the table is completely compliant with the schema, then the issues table has 0 rows.
-Otherwise the issues table contains the ways in which the output table does not comply with the schema.
+Otherwise the issues table lists the ways in which the output table does not comply with the schema.
 """
 function enforce_schema(indata, tblschema::TableSchema, set_invalid_to_missing::Bool)
+    # Init
     n       = size(indata, 1)
     outdata = init_compliant_data(tblschema, n)
-    issues  = NamedTuple{(:entity, :id, :issue),Tuple{String,String,String}}[]
+    issues  = NamedTuple{(:entity, :id, :issue), Tuple{String,String,String}}[]
     tblname = tblschema.name
 
     #=
@@ -19,38 +33,44 @@ function enforce_schema(indata, tblschema::TableSchema, set_invalid_to_missing::
       - Set categorical columns where required
     =#
     for (colname, colschema) in tblschema.columns
-        !haskey(indata, colname) && continue  # Desired column not in indata; outdata will have a column of missings.
-        target_type  = colschema.eltyp
-        validvals    = colschema.valid_values
-        vv_type      = typeof(validvals)
+        !hasproperty(indata, colname) && continue  # Desired column not in indata; outdata will have a column of missings.
+        target_type  = colschema.datatype
+        parser       = colschema.parser
+        validvals    = colschema.validvalues
+        vv_type      = get_datatype(validvals)
+        output_type  = nonmissingtype(eltype(outdata[!, colname]))
         invalid_vals = Set{Any}()
         for i = 1:n
             val = indata[i, colname]
             ismissing(val) && continue
-            typeof(val) == String && val == "" && continue
+            if val isa CategoricalString || val isa CategoricalValue
+                val = get(val)
+            end
+            val isa String && val == "" && continue
             is_invalid = false
-            if typeof(val) != target_type  # Convert type
+            if !(val isa target_type)  # Convert type
                 try
-                    val = parse_as_type(target_type, val)
+                    val = parse(parser, val)
                 catch
                     is_invalid = true
                 end
             end
             # Value has correct type, now check that value is in the valid range
-            if !is_invalid && (vv_type <: Vector || vv_type <: AbstractRange) && !value_is_valid(val, validvals)
+            if !is_invalid && !value_is_valid(val, validvals)
                 is_invalid = true
             end
             # Record invalid value
-            if is_invalid && !set_invalid_to_missing
+            if is_invalid && !set_invalid_to_missing && length(invalid_vals) < 5  # Record no more than 5 invlaid values
                 push!(invalid_vals, val)
             end
+            # Write valid value to outdata
             if !is_invalid || (is_invalid && !set_invalid_to_missing)
-                if typeof(val) == Missings.T(eltype(outdata[colname]))
+                if val isa output_type
                     outdata[i, colname] = val
                 end
             end
         end
-        if colschema.is_categorical
+        if colschema.iscategorical
             categorical!(outdata, colname)
         end
         if !isempty(invalid_vals)
@@ -66,80 +86,15 @@ function enforce_schema(indata, tblschema::TableSchema, set_invalid_to_missing::
     outdata, issues
 end
 
-value_is_valid(val, validvals::Vector) = in(val, validvals)
-value_is_valid(val, validvals::AbstractRange) = isless(validvals[1], val) && isless(val, validvals[end])  #Check only the end points for efficiency. TODO: Check interior points efficiently.
-
-function value_is_valid(val::T, validvals::AbstractRange) where {T <: CategoricalValue}
-    isless(validvals[1], get(val)) && isless(get(val), validvals[end]) #Check only the end points for efficiency. TODO: Check interior points efficiently.
-end
-
-
 "Returns: A table with unpopulated columns with name, type, length and order matching the table schema."
 function init_compliant_data(tblschema::TableSchema, n::Int)
     result = DataFrame()
-    for colname in tblschema.col_order
+    for colname in tblschema.columnorder
         colschema = tblschema.columns[colname]
-        eltyp     = eltype(colschema)
-        result[colname] = missings(eltyp, n)
+        eltyp     = colschema.datatype
+        result[!, colname] = missings(eltyp, n)
     end
     result
 end
 
-function parse_as_type(::Type{Date}, val::T) where {T <: AbstractString}
-    try
-        Date(val[1:10])   # example: "2017-12-31"
-    catch
-        eval(Meta.parse(val))  # example: "today() + Day(4)"
-    end
 end
-
-function parse_as_type(target_type::T, val) where {T <: Dict}
-    tp = target_type["type"]
-    if haskey(target_type, "kwargs")
-        tp(val, target_type["args"]...; target_type["kwargs"]...)
-    else
-        tp(val, target_type["args"]...)
-    end
-end
-
-function parse_as_type(target_type, val)
-    try
-        parse(target_type, val)
-    catch
-        convert(target_type, val)
-    end
-end
-
-
-# This block enables a custom constructor of an existing non-Base type (TimeZones.ZonedDateTime)
-function TimeZones.ZonedDateTime(dt::T, fmt::String, tz::TimeZones.TimeZone) where {T <: AbstractString}
-    i = Int(Char(dt[1]))
-    if i >= 48 && i <= 57  # dt[1] is a digit in 0,1,...,9.
-        if !occursin("T", fmt)
-            fmt = replace(fmt, " " => "T")              # Example: old value: "Y-m-d H:M"; new value: "Y-m-dTH:M"
-        end
-        if !occursin("T", dt)
-            dt = replace(dt, " " => "T")                # Example: old value: "2017-12-31T09:29"; new value: "2017-12-31 09:29"
-        end
-
-        # Remove existing TimeZone
-        idx = findfirst(isequal('+'), dt)  # Example: "2016-11-08T13:15:00+11:00"
-        if idx != nothing
-            dt = dt[1:(idx-1)]             # Example: "2016-11-08T13:15:00"
-        end
-
-        # Convert String to DateTime
-        dttm = try
-            DateTime(dt)
-        catch
-            DateTime(dt, fmt)
-        end
-        TimeZones.ZonedDateTime(dttm, tz)  # Example: dt = "2017-12-31 09:29"
-    else
-        TimeZones.ZonedDateTime(DateTime(eval(Meta.parse(dt))), tz)  # Example: dt = "today() + Day(2)"
-    end
-end
-TimeZones.ZonedDateTime(dt::T, fmt::String, tz::String) where {T <: AbstractString} = ZonedDateTime(dt, fmt, TimeZone(tz))
-TimeZones.ZonedDateTime(dt::DateTime, fmt::String, tz) = ZonedDateTime(dt, tz)
-TimeZones.ZonedDateTime(dt::DateTime, tz::String)      = ZonedDateTime(dt, TimeZone(tz))
-TimeZones.ZonedDateTime(dt::Date, fmt::String, tz)     = ZonedDateTime(DateTime(dt), tz)

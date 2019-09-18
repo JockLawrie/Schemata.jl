@@ -3,33 +3,33 @@ fever:
   tables:
     mytable:
       description: "My table"
-      primary_key: patientid
+      primarykey: patientid
       columns:
       - patientid:
           description: Patient ID
           datatype: UInt
-          categorical: false
-          required: true
-          unique: true
+          iscategorical: false
+          isrequired: true
+          isunique: true
           validvalues: UInt
       - age:
           description: Age (years)
           datatype: Int
-          categorical: false
-          required: true
-          unique: false
+          iscategorical: false
+          isrequired: true
+          isunique: false
           validvalues: Int
       - dose:
           description: Dose size
           datatype: String
-          categorical: true
-          required: true
-          unique: false
+          iscategorical: true
+          isrequired: true
+          isunique: false
           validvalues: ["small", "medium", "large"]
       - fever:
           description: Had fever
           datatype: Bool
-          categorical: true
-          required: true
-          unique: false
+          iscategorical: true
+          isrequired: true
+          isunique: false
           validvalues: Bool

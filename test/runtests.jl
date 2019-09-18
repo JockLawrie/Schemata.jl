@@ -1,19 +1,19 @@
 using Test
 using Schemata
+
 using DataFrames
 using Dates
-using TimeZones
 
 
 ################################################################################
 ### Test constructors 
-cs = ColumnSchema(:customer_id, "Customer ID", Int, !CATEGORICAL, REQUIRED, UNIQUE, 1:1_000_000)
-ts = TableSchema(:mytable, "My table", [cs], [:customer_id])
+cs     = ColumnSchema(:customer_id, "Customer ID", Int, !CATEGORICAL, REQUIRED, UNIQUE, 1:1_000_000)
+ts     = TableSchema(:mytable, "My table", [cs], [:customer_id])
 schema = Schema(:myschema, "My data set", Dict(:mytable => ts))
 
 @test_throws ErrorException ColumnSchema(:customer_id, "Customer ID", Int, !CATEGORICAL, REQUIRED, UNIQUE, UInt)     # Int != UInt
 @test_throws ErrorException ColumnSchema(:new, "Customer is new", Char, CATEGORICAL, REQUIRED, !UNIQUE, ["y", "n"])  # Char != String
-@test_throws ErrorException TableSchema(:mytable, "My table", [cs], [:XXXcustomer_id])  # primary_key non-existent
+@test_throws ErrorException TableSchema(:mytable, "My table", [cs], [:XXXcustomer_id])  # primarykey non-existent
 
 
 ################################################################################
@@ -47,12 +47,12 @@ categorical!(tbl, [:dose, :fever])  # Ensure :dose and :fever contain categorica
 issues = diagnose(tbl, schema.tables[:mytable])
 @test size(issues, 1) == 1
 
-tbl[:patientid] = convert(Vector{UInt}, tbl[:patientid])
+tbl[!, :patientid] = convert(Vector{UInt}, tbl[!, :patientid])
 issues = diagnose(tbl, schema.tables[:mytable])
 @test size(issues, 1) == 0
 
 # Modify schema: Forbid tbl[:age] having values of 120 or above
-schema.tables[:mytable].columns[:age].valid_values = 0:120
+schema.tables[:mytable].columns[:age].validvalues = 0:120
 
 # Compare again
 issues = diagnose(tbl, schema.tables[:mytable])
@@ -76,7 +76,7 @@ issues = diagnose(tbl, schema.tables[:mytable])
 # Add a new column to the schema
 zipcode = ColumnSchema(:zipcode, "Zip code", Int, CATEGORICAL, !REQUIRED, !UNIQUE, 10000:99999)
 insert_column!(schema.tables[:mytable], zipcode)
-@test schema.tables[:mytable].col_order[end] == :zipcode
+@test schema.tables[:mytable].columnorder[end] == :zipcode
 @test haskey(schema.tables[:mytable].columns, :zipcode)
 @test schema.tables[:mytable].columns[:zipcode] == zipcode
 
@@ -87,7 +87,7 @@ insert_column!(schema.tables[:mytable], zipcode)
 #@test schema == schema_from_disk
 
 # Add a corresponding (non-compliant) column to the data
-tbl[:zipcode] = ["11111", "22222", "33333", "NULL"];  # CSV file was supplied with "NULL" values, forcing eltype to be String.
+tbl[!, :zipcode] = ["11111", "22222", "33333", "NULL"];  # CSV file was supplied with "NULL" values, forcing eltype to be String.
 issues = diagnose(tbl, schema.tables[:mytable])
 @test size(issues, 1) == 2
 
@@ -97,38 +97,59 @@ tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
 
 
 # Add a new column to the schema
-datatype = Dict("type" => Date, "args" => "Y-m-d")
-dosedate = ColumnSchema(:date, "Dose date", datatype, CATEGORICAL, !REQUIRED, !UNIQUE, datatype)
+dosedate = ColumnSchema(:date, "Dose date", Date, CATEGORICAL, !REQUIRED, !UNIQUE, Date)
 insert_column!(schema.tables[:mytable], dosedate)
 
 # Add a corresponding (compliant) column to the data
-tbl[:date] = ["2017-12-01", "2017-12-01", "2017-12-11", "2017-12-09"];
+tbl[!, :date] = ["2017-12-01", "2017-12-01", "2017-12-11", "2017-12-09"];
 issues = diagnose(tbl, schema.tables[:mytable])
 @test size(issues, 1) == 2
 tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
 @test size(issues, 1) == 0
 
 ################################################################################
-# Test ZonedDateTime
-d = Dict("name"        => "zdt", "unique" => false, "required" => true, "description" => "descr","categorical" => false,
-         "datatype"    => Dict("args"=>["Y-m-d H:M", "Australia/Melbourne"], "type"=>"TimeZones.ZonedDateTime"),
-         "validvalues" => "(today()-Year(2), Day(1), today()+Year(1))")
+# Test CustomParser
+
+# Define custom parser
+using TimeZones
+
+function my_zdt_custom_parser(s::T, tz::String) where {T <: AbstractString}
+    occursin(':', s) && return ZonedDateTime(DateTime(s[1:16]), TimeZone(tz))  # Example: s="2020-12-31T09:30:59+10:00"
+    dt = Date(eval(Meta.parse(s)))  # Examples: s="today()", s="2020-11-01"
+    ZonedDateTime(DateTime(dt), TimeZone(tz))
+end
+
+my_zdt_custom_parser(dttm::DateTime, tz::String) = ZonedDateTime(dttm, TimeZone(tz))
+
+# Dict for ColumnSchema constructor, obtained after reading yaml
+d = Dict("name"          => "zdt", "description" => "Test custom parser for TimeZones.ZonedDateTime",
+         "datatype"      => "ZonedDateTime",
+         "iscategorical" => false, "isrequired" => true, "isunique" => true,
+         "validvalues"   => "(today()-Year(2), Hour(1), today()-Day(1))",  # Ensure that the range has sufficient resolution
+         "parser"        => Dict("function" => "my_zdt_custom_parser", "args"=>["Australia/Melbourne"]))
+
+# Need to eval datatype and parser.function in the same scope that they were defined (and before constructing the ColumnSchema).
+# Schemata.jl can't see the datatype and parser.function until it receives them from the current scope.
+d["datatype"] = eval(Meta.parse(d["datatype"]))
+d["parser"]["function"] = eval(Meta.parse(d["parser"]["function"]))
+
+# Now the schema constructors can be used
 cs     = ColumnSchema(d)
 ts     = TableSchema(:mytable, "My table", [cs], [:zdt])
 schema = Schema(:myschema, "My schema", Dict(:mytable => ts))
 
-tbl = DataFrame(zdt=[DateTime(today()) + Hour(i) for i = 1:3])
+tbl = DataFrame(zdt=[DateTime(today() - Day(7)) + Hour(i) for i = 1:3])
 target = [ZonedDateTime(tbl[i, :zdt], TimeZone("Australia/Melbourne")) for i = 1:3]
 tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
-@test tbl[:zdt] == target
+@test tbl[!, :zdt] == target
 
-tbl = DataFrame(zdt=[string(DateTime(today()) + Hour(i)) for i = 1:3])  # String type
+tbl = DataFrame(zdt=[string(DateTime(today() - Day(7)) + Hour(i)) for i = 1:3])  # String type
 tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
-@test tbl[:zdt] == target
+@test tbl[!, :zdt] == target
 
-tbl = DataFrame(zdt=[string(ZonedDateTime(DateTime(today()) + Hour(i), TimeZone("Australia/Melbourne"))) for i = 1:3])  # String type
+tbl = DataFrame(zdt=[string(ZonedDateTime(DateTime(today() - Day(7)) + Hour(i), TimeZone("Australia/Melbourne"))) for i = 1:3])  # String type
 tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
-@test tbl[:zdt] == target
+@test tbl[!, :zdt] == target
 
 ################################################################################
 # Test intra-row constraints

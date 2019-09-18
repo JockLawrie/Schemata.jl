@@ -6,7 +6,7 @@ It exists independently of any particular data set, and therefore can be constru
 
 This package facilitates 3 use cases:
 
-1. Read/write a schema from/to a yaml file. Thus schemata are portable, and a change to a schema does not require recompilation.
+1. Read/write a schema from/to a yaml file. Thus schemata are portable.
 
 2. Compare a data set to a schema and list the non-compliance issues.
 
@@ -97,17 +97,80 @@ show(tbl, true)
 issues
 ```
 
+# Custom Parsers
+
+The submodule `CustomParsers` extends the functionality of the `Parsers` package by allowing users to provide custom parsers.
+In particular, users can parse values with types that are not in Julia's `Core` module.
+Users can also use the interface to parse `Core` types in non-standard ways, as well as in standard ways.
+
+A `CustomParser` has the form:
+
+```julia
+struct CustomParser
+    func::Function
+    args::Vector
+    kwargs::Dict
+    returntype::DataType
+end
+```
+
+Calling `parse(my_custom_parser, value)` returns a value with type `my_custom_parser.returntype`.
+
+A `CustomParser` can be constructed from a `Dict`, and therefore can be specified in a config (yaml) file.
+For example, the following code (from the test suite) defines a `CustomParser` for a `ZonedDateTime` (from the `TimeZones` package).
+
+```julia
+# Define custom parser
+using TimeZones
+
+function my_zdt_custom_parser(s::T, tz::String) where {T <: AbstractString}
+    occursin(':', s) && return ZonedDateTime(DateTime(s[1:16]), TimeZone(tz))  # Example: s="2020-12-31T09:30:59+10:00"
+    dt = Date(eval(Meta.parse(s)))  # Examples: s="today()", s="2020-11-01"
+    ZonedDateTime(DateTime(dt), TimeZone(tz))
+end
+
+my_zdt_custom_parser(dttm::DateTime, tz::String) = ZonedDateTime(dttm, TimeZone(tz))
+
+# Dict for ColumnSchema constructor, obtained after reading yaml
+d = Dict("name"          => "zdt", "description" => "Test custom parser for TimeZones.ZonedDateTime",
+         "datatype"      => "ZonedDateTime",
+         "iscategorical" => false, "isrequired" => true, "isunique" => true,
+         "validvalues"   => "(today()-Year(2), Hour(1), today()-Day(1))",  # Ensure that the range has sufficient resolution
+         "parser"        => Dict("function" => "my_zdt_custom_parser", "args"=>["Australia/Melbourne"]))
+
+# Need to eval datatype and parser.function in the same scope that they were defined (and before constructing the ColumnSchema).
+# Schemata.jl can't see the datatype and parser.function until it receives them from the current scope.
+d["datatype"] = eval(Meta.parse(d["datatype"]))
+d["parser"]["function"] = eval(Meta.parse(d["parser"]["function"]))
+
+# Now the schema constructors can be used
+cs     = ColumnSchema(d)
+ts     = TableSchema(:mytable, "My table", [cs], [:zdt])
+schema = Schema(:myschema, "My schema", Dict(:mytable => ts))
+
+tbl = DataFrame(zdt=[DateTime(today() - Day(7)) + Hour(i) for i = 1:3])
+target = [ZonedDateTime(tbl[i, :zdt], TimeZone("Australia/Melbourne")) for i = 1:3]
+tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
+@test tbl[!, :zdt] == target
+
+tbl = DataFrame(zdt=[string(DateTime(today() - Day(7)) + Hour(i)) for i = 1:3])  # String type
+tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
+@test tbl[!, :zdt] == target
+
+tbl = DataFrame(zdt=[string(ZonedDateTime(DateTime(today() - Day(7)) + Hour(i), TimeZone("Australia/Melbourne"))) for i = 1:3])  # String type
+tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
+@test tbl[!, :zdt] == target
+```
+
 
 # TODO
 
-1. Remove hard coded Date handling.
+1. Implement `writeschema` (requires a write function to be implemented in `YAML.jl`).
 
-2. Implement writeschema.
+2. Define joins between tables within a schema, which induce `intrarow_constraints` across tables.
 
-3. Implement `intrarow_constraints` for `TableSchema`.
+3. Infer a `Schema` from a given data table.
 
-4. Define joins between tables within a schema, as well as intrarow_constraints across tables.
+4. Replace the dependence on DataFrames with dependence on the `Tables` interface.
 
-5. Infer a simple `Schema` from a given data table.
-
-6. Replace dependence on DataFrames with dependence on the `Tables` interface.
+5. Enable diagnosis/enforcement of tables that don't fit into memory.
