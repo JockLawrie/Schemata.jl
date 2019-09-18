@@ -22,9 +22,9 @@ struct CustomParser
 end
 
 function CustomParser(d::Dict)
-    func   = haskey(d, "parser") ? d["parser"] : Parsers.parse
-    args   = haskey(d, "args")   ? d["args"] : String[]  # Default String[] is arbitrary
-    kwargs = haskey(d, "kwargs") ? Dict(Symbol(k) => v for (k, v) in d["kwargs"]) : Dict{Symbol, Any}()
+    func   = haskey(d, "function") ? d["function"] : Parsers.parse
+    args   = haskey(d, "args")     ? d["args"] : String[]  # Default String[] is arbitrary
+    kwargs = haskey(d, "kwargs")   ? Dict(Symbol(k) => v for (k, v) in d["kwargs"]) : Dict{Symbol, Any}()
     CustomParser(func, args, kwargs, d["returntype"])
 end
 
@@ -35,8 +35,8 @@ function parse(parser::CustomParser, val)
         isempty(parser.kwargs) && return Parsers.parse(parser.returntype, val)
         return Parsers.parse(parser.returntype, val, Parsers.Options(parser.kwargs...))
     else                             # Using custom parser (Non-Core return type)
-        isempty(parser.kwargs) && return parser.func(parser.returntype, val, parser.args...)
-        return parser.func(parser.returntype, val, parser.args...; parser.kwargs...)
+        isempty(parser.kwargs) && return parser.func(val, parser.args...)
+        return parser.func(val, parser.args...; parser.kwargs...)
     end
 end
 

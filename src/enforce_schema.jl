@@ -43,14 +43,12 @@ function enforce_schema(indata, tblschema::TableSchema, set_invalid_to_missing::
         for i = 1:n
             val = indata[i, colname]
             ismissing(val) && continue
-            valtype = typeof(val)
-            if valtype <: CategoricalString || valtype <: CategoricalValue
-                val     = get(val)
-                valtype = typeof(val)
+            if val isa CategoricalString || val isa CategoricalValue
+                val = get(val)
             end
-            valtype == String && val == "" && continue
+            val isa String && val == "" && continue
             is_invalid = false
-            if valtype != target_type  # Convert type
+            if !(val isa target_type)  # Convert type
                 try
                     val = parse(parser, val)
                 catch
@@ -67,7 +65,7 @@ function enforce_schema(indata, tblschema::TableSchema, set_invalid_to_missing::
             end
             # Write valid value to outdata
             if !is_invalid || (is_invalid && !set_invalid_to_missing)
-                if typeof(val) == output_type
+                if val isa output_type
                     outdata[i, colname] = val
                 end
             end
