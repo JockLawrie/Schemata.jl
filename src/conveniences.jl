@@ -1,12 +1,14 @@
 module conveniences
 
-export insert_column!
+export get_columnschema, insertcolumn! 
 
 using ..schematypes
 
 
+get_columnschema(tableschema::TableSchema, colname::Symbol) = tableschema.columns[colname]
+
 "Insert a column into the table schema at position n."
-function insert_column!(tblschema::TableSchema, colschema::ColumnSchema, n::Int=-1)
+function insertcolumn!(tblschema::TableSchema, colschema::ColumnSchema, n::Int=-1)
     # Collect basic info
     colname     = colschema.name
     columnorder = tblschema.columnorder
@@ -28,5 +30,6 @@ function insert_column!(tblschema::TableSchema, colschema::ColumnSchema, n::Int=
         splice!(columnorder, n:(n-1), colname)
     end
 end
+
 
 end
