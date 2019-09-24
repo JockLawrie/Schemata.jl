@@ -87,12 +87,11 @@ function enforce_schema(indata, tblschema::TableSchema, set_invalid_to_missing::
 end
 
 "Returns: A table with unpopulated columns with name, type, length and order matching the table schema."
-function init_compliant_data(tblschema::TableSchema, n::Int)
+function init_compliant_data(tableschema::TableSchema, n::Int)
     result = DataFrame()
-    for colname in tblschema.columnorder
-        colschema = tblschema.columns[colname]
-        eltyp     = colschema.datatype
-        result[!, colname] = missings(eltyp, n)
+    for colname in tableschema.columnorder
+        colschema = tableschema.columns[colname]
+        result[!, colname] = missings(colschema.datatype, n)
     end
     result
 end

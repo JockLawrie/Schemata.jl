@@ -93,21 +93,20 @@ insertcolumn!(schema.tables[:mytable], zipcode)
 # Add a corresponding (non-compliant) column to the data
 tbl[!, :zipcode] = ["11111", "22222", "33333", "NULL"];  # CSV file was supplied with "NULL" values, forcing eltype to be String.
 issues = diagnose(tbl, schema.tables[:mytable])
-@test size(issues, 1) == 2
+@test size(issues, 1) == 3
 
 # Fix the data
 tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
 @test size(issues, 1) == 0
 
-
 # Add a new column to the schema
 dosedate = ColumnSchema(:date, "Dose date", Date, CATEGORICAL, !REQUIRED, !UNIQUE, Date)
-insert_column!(schema.tables[:mytable], dosedate)
+insertcolumn!(schema.tables[:mytable], dosedate)
 
 # Add a corresponding (compliant) column to the data
 tbl[!, :date] = ["2017-12-01", "2017-12-01", "2017-12-11", "2017-12-09"];
 issues = diagnose(tbl, schema.tables[:mytable])
-@test size(issues, 1) == 2
+@test size(issues, 1) == 3
 tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
 @test size(issues, 1) == 0
 
