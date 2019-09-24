@@ -2,6 +2,7 @@ module diagnosedata
 
 export diagnose, enforce_schema
 
+using CSV
 using DataFrames
 using CategoricalArrays
 using Tables
@@ -38,9 +39,9 @@ diagnose(datafile::String, tableschema::TableSchema) = diagnose_streaming_table(
 
 enforce_schema(table, tableschema, set_invalid_to_missing) = diagnose_inmemory_table(table, tableschema, true, set_invalid_to_missing)
 
-#function enforce_schema(datafile::String, tableschema, set_invalid_to_missing, outfile::String)
-#    diagnose_streaming_table(datafile, tableschema, true, set_invalid_to_missing, outfile)
-#end
+function enforce_schema(datafile::String, tableschema, set_invalid_to_missing, outfile::String)
+    diagnose_streaming_table(datafile, tableschema, true, set_invalid_to_missing, outfile)
+end
 
 ################################################################################
 # diagnose_inmemory_table!
@@ -118,9 +119,7 @@ function diagnose_inmemory_table(table, tableschema::TableSchema, enforce::Bool=
     end
 
     # Format result
-    storeissues!(issues, tableissues, columnissues, tablename)
-    issues = DataFrame(issues)
-    sort!(issues, (:entity, :id, :issue), rev=(true, false, false))
+    issues = storeissues(issues, tableissues, columnissues, tablename)
     !enforce && return issues
     outdata, issues
 end
@@ -128,9 +127,11 @@ end
 ################################################################################
 # diagnose_streaming_table!
 
-function diagnose_streaming_table(tablefile::String, tableschema::TableSchema)
+function diagnose_streaming_table(infile::String, tableschema::TableSchema, enforce::Bool=false, set_invalid_to_missing::Bool=true, outfile::String)
     tablename     = tableschema.name
     issues        = NamedTuple{(:entity, :id, :issue), Tuple{String, String, String}}[]
+    outdata       = enforce ? init_outdata(infile, tableschema) : nothing
+    n_outdata     = size(outdata, 1)
     tableissues   = Dict(:primarykey_isunique => true, :intrarow_constraints => Set{String}())
     columnissues  = Dict(col => Dict(:uniqueness_ok => true, :missingness_ok => true, :values_are_valid => true) for col in keys(tableschema.columns))
     colnames      = nothing
@@ -139,10 +140,12 @@ function diagnose_streaming_table(tablefile::String, tableschema::TableSchema)
     pk_colnames   = tableschema.primarykey
     pkvalues      = Set{String}()  # Values of the primary key
     uniquevalues  = Dict(colname => Set{colschema.datatype}() for (colname, colschema) in tableschema.columns if colschema.isunique==true)
-    delim         = tablefile[(end - 2):end] == "csv" ? "," : "\t"
+    delim         = infile[(end - 2):end] == "csv" ? "," : "\t"
     row           = Dict{Symbol, Any}()
+    i_data        = 0
+    nconstraints  = length(tableschema.intrarow_constraints)
     colname2colschema = tableschema.columns
-    f = open(tablefile)
+    f = open(infile)
     for line in eachline(f)
         if !colnames_done
             colnames = [Symbol(colname) for colname in strip.(String.(split(line, delim)))]
@@ -156,12 +159,29 @@ function diagnose_streaming_table(tablefile::String, tableschema::TableSchema)
             primarykey_isunique!(tableissues, primarykey, pkvalues)
         end
         parserow!(colname2colschema, row)         # row = Dict(colname => value, ...)
+        if enforce  # Write row to outdata
+            i_data += 1
+            for (colname, val) in row
+                if !ismissing(val) && set_invalid_to_missing
+                    colschema = colname2colschema[colname]
+                    outdata[i_data, colname] = value_is_valid(val, colschema.validvalues) ? val : missing
+                else
+                    outdata[i_data, colname] = val
+                end
+            end
+            if i_data == n_outdata
+                CSV.write(outfile, outdata; delim='\t', append=true)
+                i_data = 0  # Reset the row number
+            end
+        end
         assess_row!(tableissues, columnissues, row, tableschema, uniquevalues)
-        !issues_ok(tableissues) && !issues_ok!(columnissues) && break  # All possible issues have been detected
+        length(tableissues[:intrarow_constraints]) == nconstraints && continue     # All constraints have already been breached
+        test_intrarow_constraints!(tableissues[:intrarow_constraints], tableschema, row)
+        !enforce && !issues_ok(tableissues) && !issues_ok!(columnissues) && break  # All possible issues have been detected
     end
     close(f)
-    storeissues!(issues, tableissues, columnissues, tablename)
-    sort!(issues)
+    i_data != 0 && CSV.write(outfile, outdata[1:i_data, :]; delim='\t', append=true)
+    storeissues(issues, tableissues, columnissues, tablename)
 end
 
 
@@ -326,7 +346,12 @@ function issues_ok!(columnissues::Dict{Symbol, Dict{Symbol, Bool}})
 end
 
 
-function storeissues!(issues, tableissues, columnissues, tablename)
+"""
+Returns: Issues table, populated, formated and sorted.
+
+Store table issues and column issues in issues, then format and sort.
+"""
+function storeissues(issues, tableissues, columnissues, tablename)
     if !tableissues[:primarykey_isunique]
         push!(issues, (entity="table", id="$(tablename)", issue="Primary key not unique."))
     end
@@ -344,6 +369,8 @@ function storeissues!(issues, tableissues, columnissues, tablename)
             push!(issues, (entity="column", id="$(tablename).$(colname)", issue="Values are not valid."))
         end
     end
+    issues = DataFrame(issues)
+    sort!(issues, (:entity, :id, :issue), rev=(true, false, false))
 end
 
 "Returns: A table with unpopulated columns with name, type, length and order matching the table schema."
@@ -354,6 +381,19 @@ function init_outdata(tableschema::TableSchema, n::Int)
         result[!, colname] = missings(colschema.datatype, n)
     end
     result
+end
+
+"""
+Initialises outdata for streaming tables.
+Estimates the number of required rows using: filesize = bytes_per_row * nrows
+"""
+function init_outdata(infile::String, tableschema::TableSchema)
+    bytes_per_row = 0
+    for (colname, colschema) in tableschema.columns
+        bytes_per_row += colschema.datatype == String ? 30 : 8  # Allow 30 bytes for Strings, 8 bytes for all other data types
+    end
+    nr = Int(ceil(filesize(infile) / bytes_per_row))
+    init_outdata(tableschema, min(nr, 1_000_000))
 end
 
 end
