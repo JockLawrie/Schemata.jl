@@ -144,21 +144,20 @@ d["datatype"] = eval(Meta.parse(d["datatype"]))
 d["parser"]["function"] = eval(Meta.parse(d["parser"]["function"]))
 
 # Now the schema constructors can be used
-cs     = ColumnSchema(d)
-ts     = TableSchema(:mytable, "My table", [cs], [:zdt])
-schema = Schema(:myschema, "My schema", Dict(:mytable => ts))
+cs = ColumnSchema(d)
+ts = TableSchema(:mytable, "My table", [cs], [:zdt])
 
 tbl = DataFrame(zdt=[DateTime(today() - Day(7)) + Hour(i) for i = 1:3])
 target = [ZonedDateTime(tbl[i, :zdt], TimeZone("Australia/Melbourne")) for i = 1:3]
-tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
+tbl, issues = enforce_schema(tbl, ts, true);
 @test tbl[!, :zdt] == target
 
 tbl = DataFrame(zdt=[string(DateTime(today() - Day(7)) + Hour(i)) for i = 1:3])  # String type
-tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
+tbl, issues = enforce_schema(tbl, ts, true);
 @test tbl[!, :zdt] == target
 
 tbl = DataFrame(zdt=[string(ZonedDateTime(DateTime(today() - Day(7)) + Hour(i), TimeZone("Australia/Melbourne"))) for i = 1:3])  # String type
-tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
+tbl, issues = enforce_schema(tbl, ts, true);
 @test tbl[!, :zdt] == target
 ```
 

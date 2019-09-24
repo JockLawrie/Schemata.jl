@@ -60,7 +60,7 @@ function enforce_schema(indata, tblschema::TableSchema, set_invalid_to_missing::
                 is_invalid = true
             end
             # Record invalid value
-            if is_invalid && !set_invalid_to_missing && length(invalid_vals) < 5  # Record no more than 5 invlaid values
+            if is_invalid && !set_invalid_to_missing && length(invalid_vals) < 5  # Record no more than 5 invalid values
                 push!(invalid_vals, val)
             end
             # Write valid value to outdata

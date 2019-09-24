@@ -4,9 +4,13 @@ using Schemata
 using DataFrames
 using Dates
 
-
 ################################################################################
 ### Test constructors 
+
+const CATEGORICAL = true
+const REQUIRED    = true
+const UNIQUE      = true
+
 cs     = ColumnSchema(:customer_id, "Customer ID", Int, !CATEGORICAL, REQUIRED, UNIQUE, 1:1_000_000)
 ts     = TableSchema(:mytable, "My table", [cs], [:customer_id])
 schema = Schema(:myschema, "My data set", Dict(:mytable => ts))
@@ -27,7 +31,7 @@ fever     = ColumnSchema(:fever,     "Had fever",   Bool,    CATEGORICAL, REQUIR
 ts        = TableSchema(:mytable, "My table", [patientid, age, dose, fever], [:patientid])
 schema    = Schema(:fever, "Fever schema", Dict(:mytable => ts))
 
-pid2 = ColumnSchema(:pid2, "Patient ID", UInt, !CATEGORICAL, !REQUIRED, UNIQUE, UInt)
+pid2 = ColumnSchema(:pid2, "Patient ID - version 2", UInt, !CATEGORICAL, !REQUIRED, UNIQUE, UInt)
 @test_throws ErrorException TableSchema(:mytable, "My table", [pid2, age, dose, fever], [:pid2])  # Primary key not unique
 
 # DataFrame
@@ -39,16 +43,16 @@ tbl = DataFrame(
 )
 
 # Compare data to schema
-issues = diagnose(tbl, schema.tables[:mytable])
-@test size(issues, 1) == 3
+issues = diagnose(tbl, ts)
+@test size(issues, 1) == 4
 
 # Modify data to comply with the schema
 categorical!(tbl, [:dose, :fever])  # Ensure :dose and :fever contain categorical data
-issues = diagnose(tbl, schema.tables[:mytable])
-@test size(issues, 1) == 1
+issues = diagnose(tbl, ts)
+@test size(issues, 1) == 2
 
 tbl[!, :patientid] = convert(Vector{UInt}, tbl[!, :patientid])
-issues = diagnose(tbl, schema.tables[:mytable])
+issues = diagnose(tbl, ts)
 @test size(issues, 1) == 0
 
 # Modify schema: Forbid tbl[:age] having values of 120 or above
@@ -75,7 +79,7 @@ issues = diagnose(tbl, schema.tables[:mytable])
 
 # Add a new column to the schema
 zipcode = ColumnSchema(:zipcode, "Zip code", Int, CATEGORICAL, !REQUIRED, !UNIQUE, 10000:99999)
-insert_column!(schema.tables[:mytable], zipcode)
+insertcolumn!(schema.tables[:mytable], zipcode)
 @test schema.tables[:mytable].columnorder[end] == :zipcode
 @test haskey(schema.tables[:mytable].columns, :zipcode)
 @test schema.tables[:mytable].columns[:zipcode] == zipcode
@@ -134,21 +138,20 @@ d["datatype"] = eval(Meta.parse(d["datatype"]))
 d["parser"]["function"] = eval(Meta.parse(d["parser"]["function"]))
 
 # Now the schema constructors can be used
-cs     = ColumnSchema(d)
-ts     = TableSchema(:mytable, "My table", [cs], [:zdt])
-schema = Schema(:myschema, "My schema", Dict(:mytable => ts))
+cs = ColumnSchema(d)
+ts = TableSchema(:mytable, "My table", [cs], [:zdt])
 
 tbl = DataFrame(zdt=[DateTime(today() - Day(7)) + Hour(i) for i = 1:3])
 target = [ZonedDateTime(tbl[i, :zdt], TimeZone("Australia/Melbourne")) for i = 1:3]
-tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
+tbl, issues = enforce_schema(tbl, ts, true);
 @test tbl[!, :zdt] == target
 
 tbl = DataFrame(zdt=[string(DateTime(today() - Day(7)) + Hour(i)) for i = 1:3])  # String type
-tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
+tbl, issues = enforce_schema(tbl, ts, true);
 @test tbl[!, :zdt] == target
 
 tbl = DataFrame(zdt=[string(ZonedDateTime(DateTime(today() - Day(7)) + Hour(i), TimeZone("Australia/Melbourne"))) for i = 1:3])  # String type
-tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
+tbl, issues = enforce_schema(tbl, ts, true);
 @test tbl[!, :zdt] == target
 
 ################################################################################

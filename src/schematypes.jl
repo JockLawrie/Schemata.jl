@@ -65,9 +65,12 @@ struct TableSchema
 
     function TableSchema(name, description, columns, columnorder, primarykey, intrarow_constraints=Function[])
         for colname in primarykey
-            !haskey(columns, colname) && error("Table :$(name). Primary key has a non-existent column ($(colname)).")
+            !haskey(columns, colname) && error("Table: $(name). Primary key has a non-existent column ($(colname)).")
             colschema = columns[colname]
-            !colschema.isrequired    && error("Table :$(name). Primary key has a column ($(colname)) that allows missing data.")
+            !colschema.isrequired    && error("Table: $(name). Primary key has a column ($(colname)) that allows missing data.")
+        end
+        if length(primarykey) == 1 && columns[primarykey[1]].isunique == false
+            error("Table: $(name). Primary key must have isunique == true.")
         end
         new(name, description, columns, columnorder, primarykey, intrarow_constraints)
     end

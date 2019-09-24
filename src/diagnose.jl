@@ -3,145 +3,299 @@ module diagnosedata
 export diagnose
 
 using CategoricalArrays
+using Tables
 
+using ..CustomParsers
 using ..handle_validvalues
 using ..schematypes
+
+################################################################################
+# API functions
 
 """
 Returns: Vector of NamedTuples, each of which is a way in which the table does not comply with the schema.
 
 Example result:
-
   :entity   :id        :issue
    col      patientid  Incorrect data type (String)
    col      patientid  Missing data not allowed
    col      patientid  Values are not unique
    col      gender     Invalid values ('d')
    table    mytable    Primary key not unique
+
+There are 2 methods for diagnosing a table:
+
+1. `diagnose(table, tableschema)` diagnoses an in-memory table.
+
+2. `diagnose(datafile::String, tableschema)` diagnoses a table located at `datafile`.
+   This method is designed for tables that are too big for RAM.
+   It diagnoses a table one row at a time.
 """
-function diagnose(data::Dict{Symbol, T}, schema::Schema) where {T}
-    issues = NamedTuple{(:entity, :id, :issue),Tuple{String,String,String}}[]
+diagnose(table, tableschema::TableSchema) = diagnose_inmemory_table(table, tableschema)
 
-    # Ensure that the set of tables in the data matches that in the schema
-    tblnames_data   = Set(keys(data))
-    tblnames_schema = Set(keys(schema.tables))
-    tbls = setdiff(tblnames_data, tblnames_schema)
-    length(tbls) > 0 && push!(issues, (entity="dataset", id="", issue="Dataset has tables that the schema doesn't have ($(tbls))."))
-    tbls = setdiff(tblnames_schema, tblnames_data)
-    length(tbls) > 0 && push!(issues, (entity="dataset", id="", issue="Dataset is missing some tables that the Schema has ($(tbls))."))
+diagnose(datafile::String, tableschema::TableSchema) = diagnose_streaming_table(datafile, tableschema)
 
-    # Table and column level diagnoses
-    for (tblname, tblschema) in schema.tables
-        !haskey(data, tblname) && continue
-        diagnose_table!(issues, data[tblname], tblschema)
+################################################################################
+# diagnose_inmemory_table!
+
+function diagnose_inmemory_table(table, tableschema::TableSchema)
+    # Init
+    tablename     = tableschema.name
+    issues        = NamedTuple{(:entity, :id, :issue), Tuple{String, String, String}}[]
+    tableissues   = Dict(:primarykey_isunique => true, :intrarow_constraints => Set{String}())
+    columnissues  = Dict(col => Dict(:uniqueness_ok => true, :missingness_ok => true, :values_are_valid => true) for col in keys(tableschema.columns))
+    colnames      = propertynames(table)
+    primarykey    = fill("", length(tableschema.primarykey))
+    pk_colnames   = tableschema.primarykey
+    pkvalues      = Set{String}()  # Values of the primary key
+    uniquevalues  = Dict(colname => Set{colschema.datatype}() for (colname, colschema) in tableschema.columns if colschema.isunique==true)
+    datacols_match_schemacols!(issues, tableschema, Set(colnames))
+
+    # Column-level checks
+    for (colname, colschema) in tableschema.columns
+        coldata    = getproperty(table, colname)
+        data_eltyp = colschema.iscategorical ? eltype(levels(coldata)) : Core.Compiler.typesubtract(eltype(coldata), Missing)
+        if data_eltyp != colschema.datatype  # Check data type matches that specified in the ColumnSchema
+            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="Data has eltype $(data_eltyp), schema requires $(colschema.datatype)."))
+        end
+        if colschema.iscategorical && !(coldata isa CategoricalVector)  # Ensure categorical values
+            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="Data is not categorical."))
+        end
     end
-    issues
+
+    # Row-level checks
+    for row in Tables.rows(table)
+        if length(pk_colnames) > 1 && tableissues[:primarykey_isunique] # Uniqueness of 1-column primary keys is checked at the column level
+            j = 0
+            for colname in colnames
+                j  += 1
+                val = getproperty(row, colname)
+                primarykey[j] = ismissing(val) ? "" : string(val)
+            end
+            primarykey_isunique!(tableissues, primarykey, pkvalues)
+        end
+        assess_row!(tableissues, columnissues, row, tableschema, uniquevalues)
+        !issues_ok(tableissues) && !issues_ok!(columnissues) && break  # All possible issues have been detected
+    end
+
+    # Format result
+    storeissues!(issues, tableissues, columnissues, tablename)
+    sort!(issues)
 end
 
-diagnose(tbl, tblschema::TableSchema) = diagnose_table!(NamedTuple{(:entity, :id, :issue),Tuple{String,String,String}}[], tbl, tblschema)
+################################################################################
+# diagnose_streaming_table!
+
+function diagnose_streaming_table(tablefile::String, tableschema::TableSchema)
+    tablename     = tableschema.name
+    issues        = NamedTuple{(:entity, :id, :issue), Tuple{String, String, String}}[]
+    tableissues   = Dict(:primarykey_isunique => true, :intrarow_constraints => Set{String}())
+    columnissues  = Dict(col => Dict(:uniqueness_ok => true, :missingness_ok => true, :values_are_valid => true) for col in keys(tableschema.columns))
+    colnames      = nothing
+    colnames_done = false
+    primarykey    = fill("", length(tableschema.primarykey))
+    pk_colnames   = tableschema.primarykey
+    pkvalues      = Set{String}()  # Values of the primary key
+    uniquevalues  = Dict(colname => Set{colschema.datatype}() for (colname, colschema) in tableschema.columns if colschema.isunique==true)
+    delim         = tablefile[(end - 2):end] == "csv" ? "," : "\t"
+    row           = Dict{Symbol, Any}()
+    colname2colschema = tableschema.columns
+    f = open(tablefile)
+    for line in eachline(f)
+        if !colnames_done
+            colnames = [Symbol(colname) for colname in strip.(String.(split(line, delim)))]
+            datacols_match_schemacols!(issues, tableschema, Set(colnames))
+            colnames_done = true
+            continue
+        end
+        extract_row!(row, line, delim, colnames)  # row = Dict(colname => String(value), ...)
+        if length(pk_colnames) > 1 && tableissues[:primarykey_isunique] # Uniqueness of 1-column primary keys is checked at the column level
+            populate_primarykey!(primarykey, pk_colnames::Vector{Symbol}, row)
+            primarykey_isunique!(tableissues, primarykey, pkvalues)
+        end
+        parserow!(colname2colschema, row)         # row = Dict(colname => value, ...)
+        assess_row!(tableissues, columnissues, row, tableschema, uniquevalues)
+        !issues_ok(tableissues) && !issues_ok!(columnissues) && break  # All possible issues have been detected
+    end
+    close(f)
+    storeissues!(issues, tableissues, columnissues, tablename)
+    sort!(issues)
+end
 
 
-"Modified: issues"
-function diagnose_table!(issues, tbl, tblschema::TableSchema)
-    # Ensure the set of columns in the data matches that in the schema
-    tblname         = String(tblschema.name)
-    colnames_data   = Set(names(tbl))
-    colnames_schema = Set(tblschema.columnorder)
+################################################################################
+# Non-API functions
+
+"Ensure the set of columns in the data matches that in the schema."
+function datacols_match_schemacols!(issues, tableschema::TableSchema, colnames_data::Set{Symbol})
+    tblname         = String(tableschema.name)
+    colnames_schema = Set(tableschema.columnorder)
     cols = setdiff(colnames_data, colnames_schema)
-    length(cols) > 0 && push!(issues, (entity="table", id=tblname, issue="Data has columns that the schema doesn't have ($(cols))."))
+    length(cols) > 0 && push!(issues, (entity="table", id=tblname, issue="The data has columns that the schema doesn't have ($(cols))."))
     cols = setdiff(colnames_schema, colnames_data)
-    length(cols) > 0 && push!(issues, (entity="table", id=tblname, issue="Data is missing some columns that the Schema has ($(cols))."))
-
-    # Ensure that the primary key is unique
-    if isempty(setdiff(Set(tblschema.primarykey), colnames_data))  # Primary key cols exist in the data
-        pk = unique(tbl[!, tblschema.primarykey])
-        size(pk, 1) != size(tbl, 1) && push!(issues, (entity="table", id=tblname, issue="Primary key not unique."))
-    end
-
-    # Column-level issues
-    columns = tblschema.columns
-    for colname in names(tbl)
-        !haskey(columns, colname) && continue  # This problem is detected at the table level
-        diagnose_column!(issues, tbl, columns[colname], tblname)
-    end
-
-    # Ensure that the intra-row constraints are satisfied
-    for (msg, f) in tblschema.intrarow_constraints
-        n_badrows = 0
-        for r in eachrow(tbl)
-            result = @eval $f($r)          # Hack to avoid world age problems. Should use macros instead.
-            ismissing(result) && continue  # Only an issue for required values, which is picked up at the column level
-            result && continue             # constraint returns true
-            n_badrows += 1
-        end
-        n_badrows == 0 && continue
-        if n_badrows == 1
-            push!(issues, (entity="table", id=tblname, issue="1 row does not satisfy: $(msg)"))
-        else
-            push!(issues, (entity="table", id=tblname, issue="$(n_badrows) rows do not satisfy: $(msg)"))
-        end
-    end
-    issues
+    length(cols) > 0 && push!(issues, (entity="table", id=tblname, issue="The data is missing some columns that the Schema has ($(cols))."))
 end
 
 
-"Append table-level issues into issues."
-function diagnose_column!(issues, tbl, colschema::ColumnSchema, tblname::String)
-    # Collect basic column info
-    colname   = colschema.name
-    coldata   = tbl[!, colname]
-    vals      = Set{Any}(coldata)  # Type qualifier {Any} allows missing to be a member of the set
-    validvals = colschema.validvalues
+function extract_row!(row::Dict{Symbol, Any}, line::String, delim::String, colnames::Vector{Symbol})
+    i_start = 1
+    colidx  = 0
+    for j = 1:10_000  # Maximum of 10_000 columns
+        colidx += 1
+        r       = findnext(delim, line, i_start)  # r = i:i, where line[i] == '\t'
+        if isnothing(r)  # If r is nothing then we're in the last column
+            row[colnames[colidx]] = String(line[i_start:end])
+            break
+        else
+            i_end = r[1] - 1
+            row[colnames[colidx]] = String(line[i_start:i_end])
+            i_start = i_end + 2
+        end
+    end
+end
 
-    # Ensure correct datatype
-    colschema_datatype = colschema.datatype
-    if colschema.iscategorical
-        data_eltyp = eltype(levels(coldata))
+
+"Modified: primarykey"
+function populate_primarykey!(primarykey::Vector{String}, pk_colnames::Vector{Symbol}, row)
+    j = 0
+    for colname in pk_colnames
+        j += 1
+        primarykey[j] = row[colname]
+    end
+end
+
+
+"Modified: tableissues, pkvalues."
+function primarykey_isunique!(tableissues, primarykey, pkvalues)
+    pk = join(primarykey)
+    if in(pk, pkvalues)
+        tableissues[:primarykey_isunique] = false
     else
-        data_eltyp = Core.Compiler.typesubtract(eltype(coldata), Missing)
+        push!(pkvalues, pk)
     end
-    if data_eltyp != colschema_datatype
-        push!(issues, (entity="column", id="$(tblname).$(colname)", issue="Data has eltype $(data_eltyp), schema requires $(colschema_datatype)."))
-    end
+end
 
-    # Ensure categorical
-    if colschema.iscategorical && !(coldata isa CategoricalVector)
-        push!(issues, (entity="column", id="$(tblname).$(colname)", issue="Data is not categorical."))
-    end
 
+"""
+Modified: row
+
+Parse values from String to colschema.datatype
+"""
+function parserow!(colname2colschema, row)
+    for (colname, colschema) in tableschema.columns
+        row[colname] = parsevalue(colschema, row[colname])
+    end
+end
+
+
+function parsevalue(colschema::ColumnSchema, value::String)
+    value == "" && return missing
+    value isa colschema.datatype && return value
+    try
+        parse(colschema.parser, value)
+    catch e
+        missing
+    end
+end
+
+
+function assess_row!(tableissues, columnissues, row, tableschema, uniquevalues)
+    tablename = tableschema.name
+    for (colname, colschema) in tableschema.columns
+        !haskey(columnissues, colname) && continue  # All possible issues for this column have already been found
+        diagnose_value!(columnissues[colname], getproperty(row, colname), colschema, uniquevalues, tablename)
+    end
+    length(tableissues[:intrarow_constraints]) == length(tableschema.intrarow_constraints) && return  # All constraints have already been breached
+    test_intrarow_constraints!(tableissues[:intrarow_constraints], tableschema, row)
+end
+
+
+function diagnose_value!(columnissues::Dict{Symbol, Bool}, value::T, colschema::ColumnSchema, uniquevalues, tablename) where {T <: CategoricalValue} 
+    diagnose_value!(columnissues, get(value), colschema, uniquevalues, tablename)
+end
+
+
+function diagnose_value!(columnissues::Dict{Symbol, Bool}, value, colschema::ColumnSchema, uniquevalues, tablename)
     # Ensure no missing data
-    if colschema.isrequired && in(missing, vals)
-        push!(issues, (entity="column", id="$(tblname).$(colname)", issue="Missing data not allowed."))
+    if columnissues[:missingness_ok] && colschema.isrequired && ismissing(value)
+        columnissues[:missingness_ok] = false
     end
 
     # Ensure unique data
-    if colschema.isunique && length(vals) < size(coldata, 1)
-        push!(issues, (entity="column", id="$(tblname).$(colname)", issue="Values are not unique."))
+    if columnissues[:uniqueness_ok] && colschema.isunique
+        colname = colschema.name
+        if in(value, uniquevalues[colname])
+            columnissues[:uniqueness_ok] = false
+        elseif !ismissing(value)
+            push!(uniquevalues[colname], value)
+        end
     end
 
     # Ensure valid values
-    data_eltyp != colschema_datatype && return  # Only check values are valid if the values' data type is valid
-    validvals isa DataType           && return  # validvals == colschema.datatype and colschema.datatype == data_eltyp 
-    invalidvalues = Set{colschema_datatype}()
-    if coldata isa CategoricalArray
-        lvls = levels(coldata)
-        for val in vals
-            ismissing(val) && continue
-            v = lvls[val.level]
-            !value_is_valid(v, validvals) && push!(invalidvalues, v)
-            length(invalidvalues) == 5 && break  # Record a maximum of 5 invalid values in the issues table
-        end
-    else
-        for val in vals
-            ismissing(val) && continue
-            !value_is_valid(val, validvals) && push!(invalidvalues, val)
-            length(invalidvalues) == 5 && break  # Record a maximum of 5 invalid values in the issues table
-        end
+    if columnissues[:values_are_valid] && !ismissing(value)
+        columnissues[:values_are_valid] = value_is_valid(value, colschema.validvalues)
     end
-    if !isempty(invalidvalues)
-        invalidvalues = [x for x in invalidvalues]  # Convert Set to Vector
-        sort!(invalidvalues)
-        push!(issues, (entity="column", id="$(tblname).$(colname)", issue="Invalid values: $(invalidvalues)"))
+end
+
+
+"""
+Modified: constraint_issues.
+- row is a property accessible object: val = getproperty(row, colname)
+"""
+function test_intrarow_constraints!(constraint_issues::Set{String}, tableschema::TableSchema, row)
+    for (msg, f) in tableschema.intrarow_constraints
+        in(msg, constraint_issues) && continue  # Have already recorded this issue
+        ok = @eval $f($row)        # Hack to avoid world age problem.
+        ismissing(ok) && continue  # Missing ok is picked up at the column level
+        ok && continue
+        push!(constraint_issues, msg)
+    end
+end
+
+
+"Returns: True if there are no table-level issues."
+function issues_ok(tableissues::Dict{Symbol, Any})
+    !tableissues[:primarykey_isunique] && return false
+    isempty(tableissues[:intrarow_constraints])
+end
+
+
+"""
+Modified: columnissues (key-value pair is removed if the value contains only false).
+
+Return: True if at least 1 column has at least 1 ok.
+"""
+function issues_ok!(columnissues::Dict{Symbol, Dict{Symbol, Bool}})
+    for (colname, d) in columnissues
+        n_ok = length(d)
+        for (issue, ok) in d
+            ok && continue
+            n_ok -= 1
+        end
+        n_ok > 0 && continue
+        delete!(columnissues, colname)  # colname has all possible issues...no need to test it on other rows
+    end
+    length(columnissues) > 0
+end
+
+
+function storeissues!(issues, tableissues, columnissues, tablename)
+    if !tableissues[:primarykey_isunique]
+        push!(issues, (entity="table", id="$(tablename)", issue="Primary key not unique."))
+    end
+    for msg in tableissues[:intrarow_constraints]
+        push!(issues, (entity="table", id="$(tablename)", issue="Intra-row constraint not satisfied: $(msg)"))
+    end
+    for (colname, d) in columnissues
+        if !d[:missingness_ok]
+            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="Missing data not allowed."))
+        end
+        if !d[:uniqueness_ok]
+            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="Values are not unique."))
+        end
+        if !d[:values_are_valid]
+            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="Values are not valid."))
+        end
     end
 end
 
