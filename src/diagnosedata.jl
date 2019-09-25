@@ -137,14 +137,15 @@ function diagnose_streaming_table(infile::String, tableschema::TableSchema, enfo
     columnissues  = Dict(col => Dict(:uniqueness_ok => true, :missingness_ok => true, :values_are_valid => true) for col in keys(tableschema.columns))
     colnames      = nothing
     colnames_done = false
-    primarykey    = fill("", length(tableschema.primarykey))
     pk_colnames   = tableschema.primarykey
+    primarykey    = fill("", length(pk_colnames))
     pkvalues      = Set{String}()  # Values of the primary key
     uniquevalues  = Dict(colname => Set{colschema.datatype}() for (colname, colschema) in tableschema.columns if colschema.isunique==true)
     delim         = infile[(end - 2):end] == "csv" ? "," : "\t"
     row           = Dict{Symbol, Any}()
     i_data        = 0
     nconstraints  = length(tableschema.intrarow_constraints)
+    stripchar     = nothing  # Chars to strip from either end of each value. In some files values are quoted. E.g., line = "\"v1\", \"v2\",...".
     colname2colschema = tableschema.columns
     if enforce
         CSV.write(outfile, init_outdata(tableschema, 0))  # Write column headers to disk
@@ -152,12 +153,19 @@ function diagnose_streaming_table(infile::String, tableschema::TableSchema, enfo
     f = open(infile)
     for line in eachline(f)
         if !colnames_done
-            colnames = [Symbol(colname) for colname in strip.(String.(split(line, delim)))]
+            r = String.(split(line, delim))
+            c = Int(r[1][1])  # 1st character of 1st value
+            if !(in(c, 48:57) || in(c, 65:90) || in(c, 97:122))
+                stripchar = string(r[1][1])
+                colnames  = [Symbol(colname) for colname in strip.(String.(split(line, delim)), r[1][1])]
+            else
+                colnames = [Symbol(colname) for colname in strip.(String.(split(line, delim)))]
+            end
             datacols_match_schemacols!(issues, tableschema, Set(colnames))
             colnames_done = true
             continue
         end
-        extract_row!(row, line, delim, colnames)  # row = Dict(colname => String(value), ...)
+        extract_row!(row, line, delim, colnames, stripchar)  # row = Dict(colname => String(value), ...)
         if length(pk_colnames) > 1 && tableissues[:primarykey_isunique] # Uniqueness of 1-column primary keys is checked at the column level
             populate_primarykey!(primarykey, pk_colnames::Vector{Symbol}, row)
             primarykey_isunique!(tableissues, primarykey, pkvalues)
@@ -205,21 +213,37 @@ function datacols_match_schemacols!(issues, tableschema::TableSchema, colnames_d
     length(cols) > 0 && push!(issues, (entity="table", id=tablename, issue="The data is missing some columns that the Schema has ($(cols))."))
 end
 
-
-function extract_row!(row::Dict{Symbol, Any}, line::String, delim::String, colnames::Vector{Symbol})
+"Values are separated by delim."
+function extract_row!(row::Dict{Symbol, Any}, line::String, delim::String, colnames::Vector{Symbol}, stripchar::Nothing)
     i_start = 1
-    colidx  = 0
-    for j = 1:10_000  # Maximum of 10_000 columns
-        colidx += 1
-        r       = findnext(delim, line, i_start)  # r = i:i, where line[i] == '\t'
+    ncols = length(colnames)
+    for j = 1:ncols
+        r = findnext(delim, line, i_start)  # r = i:i, where line[i] == delim
         if isnothing(r)  # If r is nothing then we're in the last column
-            row[colnames[colidx]] = String(line[i_start:end])
+            row[colnames[j]] = strip(String(line[i_start:end]))
             break
         else
             i_end = r[1] - 1
-            row[colnames[colidx]] = String(line[i_start:i_end])
+            row[colnames[j]] = strip(String(line[i_start:i_end]))
             i_start = i_end + 2
         end
+    end
+end
+
+"Values are separated by stripchar."
+function extract_row!(row::Dict{Symbol, Any}, line::String, delim::String, colnames::Vector{Symbol}, stripchar::String)
+    i_start = 1
+    ncols = length(colnames)
+    linelength = length(line)
+    for j = 1:ncols
+        r = findnext(stripchar, line, i_start)  # r = i:i, where line[i] == stripchar
+        isnothing(r) && break
+        i_start = r[1] + 1
+        r       = findnext(stripchar, line, i_start)
+        i_end   = r[1] - 1
+        row[colnames[j]] = strip(String(line[i_start:i_end]))
+        i_start = r[1] + 1
+        i_start > linelength && break
     end
 end
 
