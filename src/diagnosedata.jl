@@ -82,6 +82,7 @@ function diagnose_inmemory_table(table, tableschema::TableSchema, enforce::Bool=
             end
             parserow!(colname2colschema, rowdict)  # Parse rowdict
             for (colname, val) in rowdict          # Write rowdict to outdata
+                !haskey(colname2colschema, colname) && continue
                 if !ismissing(val) && set_invalid_to_missing
                     colschema = colname2colschema[colname]
                     outdata[i_data, colname] = value_is_valid(val, colschema.validvalues) ? val : missing
@@ -165,6 +166,7 @@ function diagnose_streaming_table(infile::String, tableschema::TableSchema, enfo
         if enforce  # Write row to outdata
             i_data += 1
             for (colname, val) in row
+                !haskey(colname2colschema, colname) && continue
                 if !ismissing(val) && set_invalid_to_missing
                     colschema = colname2colschema[colname]
                     if !value_is_valid(val, colschema.validvalues)

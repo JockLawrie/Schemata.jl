@@ -40,6 +40,9 @@ function ColumnSchema(d::Dict)
     datatype = d["datatype"] isa DataType ? d["datatype"] : eval(Meta.parse(d["datatype"]))
     if haskey(d, "parser") && !haskey(d["parser"], "returntype")
         d["parser"]["returntype"] = datatype
+        if d["parser"]["function"] isa String
+            d["parser"]["function"] = eval(Meta.parse(d["parser"]["function"]))
+        end
     end
     name          = d["name"]
     description   = d["description"]
