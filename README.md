@@ -160,16 +160,3 @@ tbl = DataFrame(zdt=[string(ZonedDateTime(DateTime(today() - Day(7)) + Hour(i), 
 tbl, issues = enforce_schema(tbl, ts, true);
 @test tbl[!, :zdt] == target
 ```
-
-
-# TODO
-
-1. Implement `writeschema` (requires a write function to be implemented in `YAML.jl`).
-
-2. Define joins between tables within a schema, which induce `intrarow_constraints` across tables.
-
-3. Infer a `Schema` from a given data table.
-
-4. Replace the dependence on DataFrames with dependence on the `Tables` interface.
-
-5. Enable diagnosis/enforcement of tables that don't fit into memory.
