@@ -414,49 +414,25 @@ function storeissues(issues, tableissues, columnissues, tablename, ntotal)
         push!(issues, (entity="table", id="$(tablename)", issue="Intra-row constraint not satisfied: $(msg)"))
     end
     for (colname, d) in columnissues
-        store_n_missing!(issues,   tablename, colname, d[:n_missing],   ntotal)
-        store_n_notunique!(issues, tablename, colname, d[:n_notunique], ntotal)
-        store_n_invalid!(issues,   tablename, colname, d[:n_invalid],   ntotal)
+        store_column_issue!(issues, tablename, colname, d[:n_missing],   ntotal, "have missing data")
+        store_column_issue!(issues, tablename, colname, d[:n_notunique], ntotal, "are duplicates")
+        store_column_issue!(issues, tablename, colname, d[:n_invalid],   ntotal, "contain invalid values")
     end
     issues = DataFrame(issues)
     sort!(issues, (:entity, :id, :issue), rev=(true, false, false))
 end
 
-
-function calculate_p(num, denom)
-    p = 100.0 * num / denom
-    p = p > 1.0 ? round(Int, p) : round(p; digits=2)
-    p == 0.0 ? "<0.01" : "$(p)"
+"Example: 25% (250/1000) of rows contain invalid values."
+function store_column_issue!(issues, tablename, colname, num, ntotal, msg_suffix)
+    num == 0 && return
+    p = make_pct_presentable(100.0 * num / ntotal)
+    push!(issues, (entity="column", id="$(tablename).$(colname)", issue="$(p)% ($(num)/$(ntotal)) of rows $(msg_suffix)."))
 end
 
-
-function store_n_missing!(issues, tablename, colname, n_missing, ntotal)
-    p = calculate_p(n_missing, ntotal)
-    if n_missing > 1
-        push!(issues, (entity="column", id="$(tablename).$(colname)", issue="$(n_missing) rows ($(p)%) have missing data."))
-    elseif n_missing == 1
-        push!(issues, (entity="column", id="$(tablename).$(colname)", issue="1 row ($(p)%) has missing data."))
-    end
-end
-
-
-function store_n_notunique!(issues, tablename, colname, n_notunique, ntotal)
-    p = calculate_p(n_notunique, ntotal)
-    if n_notunique > 1
-        push!(issues, (entity="column", id="$(tablename).$(colname)", issue="$(n_notunique) rows ($(p)%) are duplicates."))
-    elseif n_notunique == 1
-        push!(issues, (entity="column", id="$(tablename).$(colname)", issue="1 row ($(p)%) is a duplicate."))
-    end
-end
-
-
-function store_n_invalid!(issues, tablename, colname, n_invalid, ntotal)
-    p = calculate_p(n_invalid, ntotal)
-    if n_invalid > 1
-        push!(issues, (entity="column", id="$(tablename).$(colname)", issue="$(n_invalid) rows ($(p)%) contain invalid values."))
-    elseif n_invalid == 1
-        push!(issues, (entity="column", id="$(tablename).$(colname)", issue="1 row ($(p)%) contains an invalid value."))
-    end
+function make_pct_presentable(p)
+    p > 1.0 && return "$(round(Int, p))"
+    p < 0.1 && return "<0.1"
+    "$(round(p; digits=1))"
 end
 
 end
