@@ -66,6 +66,7 @@ function diagnose_inmemory_table(table, tableschema::TableSchema, enforce::Bool=
 
     # Row-level checks
     for row in Tables.rows(table)
+        i_data += 1
         if length(pk_colnames) > 1 && tableissues[:primarykey_isunique] # Uniqueness of 1-column primary keys is checked at the column level
             j = 0
             for colname in colnames
@@ -76,7 +77,6 @@ function diagnose_inmemory_table(table, tableschema::TableSchema, enforce::Bool=
             primarykey_isunique!(tableissues, primarykey, pkvalues)
         end
         if enforce
-            i_data += 1
             for colname in propertynames(row)      # Copy row to rowdict
                 rowdict[colname] = getproperty(row, colname)
             end
@@ -120,7 +120,7 @@ function diagnose_inmemory_table(table, tableschema::TableSchema, enforce::Bool=
     end
 
     # Format result
-    issues = storeissues(issues, tableissues, columnissues, tablename)
+    issues = storeissues(issues, tableissues, columnissues, tablename, i_data)
     !enforce && return issues
     outdata, issues
 end
@@ -143,6 +143,7 @@ function diagnose_streaming_table(infile::String, tableschema::TableSchema, enfo
     uniquevalues  = Dict(colname => Set{colschema.datatype}() for (colname, colschema) in tableschema.columns if colschema.isunique==true)
     delim         = infile[(end - 2):end] == "csv" ? "," : "\t"
     row           = Dict{Symbol, Any}()
+    nr            = 0  # Total number of rows in the table
     i_data        = 0
     nconstraints  = length(tableschema.intrarow_constraints)
     quotechar     = nothing  # In some files values are delimited and quoted. E.g., line = "\"v1\", \"v2\", ...".
@@ -165,6 +166,7 @@ function diagnose_streaming_table(infile::String, tableschema::TableSchema, enfo
             colnames_done = true
             continue
         end
+        nr += 1
         extract_row!(row, line, delim, colnames, quotechar)  # row = Dict(colname => String(value), ...)
         if length(pk_colnames) > 1 && tableissues[:primarykey_isunique] # Uniqueness of 1-column primary keys is checked at the column level
             populate_primarykey!(primarykey, pk_colnames::Vector{Symbol}, row)
@@ -196,7 +198,7 @@ function diagnose_streaming_table(infile::String, tableschema::TableSchema, enfo
     end
     close(f)
     i_data != 0 && CSV.write(outfile, outdata[1:i_data, :]; append=true)
-    storeissues(issues, tableissues, columnissues, tablename)
+    storeissues(issues, tableissues, columnissues, tablename, nr)
 end
 
 
@@ -404,7 +406,7 @@ Returns: Issues table, populated, formated and sorted.
 
 Store table issues and column issues in issues, then format and sort.
 """
-function storeissues(issues, tableissues, columnissues, tablename)
+function storeissues(issues, tableissues, columnissues, tablename, ntotal)
     if !tableissues[:primarykey_isunique]
         push!(issues, (entity="table", id="$(tablename)", issue="Primary key not unique."))
     end
@@ -412,24 +414,49 @@ function storeissues(issues, tableissues, columnissues, tablename)
         push!(issues, (entity="table", id="$(tablename)", issue="Intra-row constraint not satisfied: $(msg)"))
     end
     for (colname, d) in columnissues
-        if d[:n_missing] > 1
-            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="$(d[:n_missing]) rows have missing data."))
-        elseif d[:n_missing] == 1
-            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="1 row has missing data."))
-        end
-        if d[:n_notunique] > 1
-            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="$(d[:n_notunique]) rows are duplicates."))
-        elseif d[:n_notunique] == 1
-            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="1 row is a duplicate."))
-        end
-        if d[:n_invalid] > 1
-            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="$(d[:n_invalid]) rows contain invalid values."))
-        elseif d[:n_invalid] == 1
-            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="1 row contains an invalid value."))
-        end
+        store_n_missing!(issues,   tablename, colname, d[:n_missing],   ntotal)
+        store_n_notunique!(issues, tablename, colname, d[:n_notunique], ntotal)
+        store_n_invalid!(issues,   tablename, colname, d[:n_invalid],   ntotal)
     end
     issues = DataFrame(issues)
     sort!(issues, (:entity, :id, :issue), rev=(true, false, false))
+end
+
+
+function calculate_p(num, denom)
+    p = 100.0 * num / denom
+    p = p > 1.0 ? round(Int, p) : round(p; digits=2)
+    p == 0.0 ? "<0.01" : "$(p)"
+end
+
+
+function store_n_missing!(issues, tablename, colname, n_missing, ntotal)
+    p = calculate_p(n_missing, ntotal)
+    if n_missing > 1
+        push!(issues, (entity="column", id="$(tablename).$(colname)", issue="$(n_missing) rows ($(p)%) have missing data."))
+    elseif n_missing == 1
+        push!(issues, (entity="column", id="$(tablename).$(colname)", issue="1 row ($(p)%) has missing data."))
+    end
+end
+
+
+function store_n_notunique!(issues, tablename, colname, n_notunique, ntotal)
+    p = calculate_p(n_notunique, ntotal)
+    if n_notunique > 1
+        push!(issues, (entity="column", id="$(tablename).$(colname)", issue="$(n_notunique) rows ($(p)%) are duplicates."))
+    elseif n_notunique == 1
+        push!(issues, (entity="column", id="$(tablename).$(colname)", issue="1 row ($(p)%) is a duplicate."))
+    end
+end
+
+
+function store_n_invalid!(issues, tablename, colname, n_invalid, ntotal)
+    p = calculate_p(n_invalid, ntotal)
+    if n_invalid > 1
+        push!(issues, (entity="column", id="$(tablename).$(colname)", issue="$(n_invalid) rows ($(p)%) contain invalid values."))
+    elseif n_invalid == 1
+        push!(issues, (entity="column", id="$(tablename).$(colname)", issue="1 row ($(p)%) contains an invalid value."))
+    end
 end
 
 end
