@@ -23,7 +23,6 @@ age       = ColumnSchema(:age,       "Age (years)", Int,    !CATEGORICAL, REQUIR
 dose      = ColumnSchema(:dose,      "Dose size",   String,  CATEGORICAL, REQUIRED, !UNIQUE, ["small", "medium", "large"])
 fever     = ColumnSchema(:fever,     "Had fever",   Bool,    CATEGORICAL, REQUIRED, !UNIQUE, Bool)
 ts        = TableSchema(:mytable, "My table", [patientid, age, dose, fever], [:patientid])
-schema    = Schema(:fever, "Fever schema", Dict(:mytable => ts))
 
 # Compare data to schema
 issues = diagnose(infile, ts)

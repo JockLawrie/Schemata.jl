@@ -52,7 +52,7 @@ function diagnose_inmemory_table(table, tableschema::TableSchema, enforce::Bool=
     issues        = NamedTuple{(:entity, :id, :issue), Tuple{String, String, String}}[]
     outdata       = enforce ? init_outdata(tableschema, size(table, 1)) : nothing
     tableissues   = Dict(:primarykey_isunique => true, :intrarow_constraints => Set{String}())
-    columnissues  = Dict(col => Dict(:uniqueness_ok => true, :missingness_ok => true, :values_are_valid => true) for col in keys(tableschema.columns))
+    columnissues  = Dict(colname => Dict(:n_notunique => 0, :n_missing => 0, :n_invalid => 0) for colname in keys(tableschema.columns))
     colnames      = propertynames(table)
     primarykey    = fill("", length(tableschema.primarykey))
     pk_colnames   = tableschema.primarykey
@@ -100,7 +100,7 @@ function diagnose_inmemory_table(table, tableschema::TableSchema, enforce::Bool=
                 rowdict[colname] = getproperty(row, colname)
             end
             test_intrarow_constraints!(tableissues[:intrarow_constraints], tableschema, rowdict)
-            !issues_ok(tableissues) && !issues_ok!(columnissues) && break  # All possible issues have been detected
+            #!issues_ok(tableissues) && !issues_ok!(columnissues) && break  # All possible issues have been detected
         end
     end
 
@@ -134,7 +134,7 @@ function diagnose_streaming_table(infile::String, tableschema::TableSchema, enfo
     outdata       = enforce ? init_outdata(infile, tableschema) : nothing
     n_outdata     = enforce ? size(outdata, 1) : 0
     tableissues   = Dict(:primarykey_isunique => true, :intrarow_constraints => Set{String}())
-    columnissues  = Dict(col => Dict(:uniqueness_ok => true, :missingness_ok => true, :values_are_valid => true) for col in keys(tableschema.columns))
+    columnissues  = Dict(colname => Dict(:n_notunique => 0, :n_missing => 0, :n_invalid => 0) for colname in keys(tableschema.columns))
     colnames      = nothing
     colnames_done = false
     pk_colnames   = tableschema.primarykey
@@ -145,7 +145,7 @@ function diagnose_streaming_table(infile::String, tableschema::TableSchema, enfo
     row           = Dict{Symbol, Any}()
     i_data        = 0
     nconstraints  = length(tableschema.intrarow_constraints)
-    stripchar     = nothing  # Chars to strip from either end of each value. In some files values are quoted. E.g., line = "\"v1\", \"v2\",...".
+    quotechar     = nothing  # In some files values are delimited and quoted. E.g., line = "\"v1\", \"v2\", ...".
     colname2colschema = tableschema.columns
     if enforce
         CSV.write(outfile, init_outdata(tableschema, 0))  # Write column headers to disk
@@ -156,21 +156,21 @@ function diagnose_streaming_table(infile::String, tableschema::TableSchema, enfo
             r = String.(split(line, delim))
             c = Int(r[1][1])  # 1st character of 1st value
             if !(in(c, 48:57) || in(c, 65:90) || in(c, 97:122))
-                stripchar = string(r[1][1])
-                colnames  = [Symbol(colname) for colname in strip.(String.(split(line, delim)), r[1][1])]
+                quotechar = string(r[1][1])
+                colnames  = [Symbol(colname) for colname in String.(strip.(split(line, delim), r[1][1]))]
             else
-                colnames = [Symbol(colname) for colname in strip.(String.(split(line, delim)))]
+                colnames = [Symbol(colname) for colname in String.(strip.(split(line, delim)))]
             end
             datacols_match_schemacols!(issues, tableschema, Set(colnames))
             colnames_done = true
             continue
         end
-        extract_row!(row, line, delim, colnames, stripchar)  # row = Dict(colname => String(value), ...)
+        extract_row!(row, line, delim, colnames, quotechar)  # row = Dict(colname => String(value), ...)
         if length(pk_colnames) > 1 && tableissues[:primarykey_isunique] # Uniqueness of 1-column primary keys is checked at the column level
             populate_primarykey!(primarykey, pk_colnames::Vector{Symbol}, row)
             primarykey_isunique!(tableissues, primarykey, pkvalues)
         end
-        parserow!(colname2colschema, row)         # row = Dict(colname => value, ...)
+        parserow!(colname2colschema, row)  # row = Dict(colname => value, ...)
         if enforce  # Write row to outdata
             i_data += 1
             for (colname, val) in row
@@ -192,7 +192,7 @@ function diagnose_streaming_table(infile::String, tableschema::TableSchema, enfo
         assess_row!(tableissues, columnissues, row, tableschema, uniquevalues)
         length(tableissues[:intrarow_constraints]) == nconstraints && continue     # All constraints have already been breached
         test_intrarow_constraints!(tableissues[:intrarow_constraints], tableschema, row)
-        !enforce && !issues_ok(tableissues) && !issues_ok!(columnissues) && break  # All possible issues have been detected
+        #!enforce && !issues_ok(tableissues) && !issues_ok!(columnissues) && break  # All possible issues have been detected
     end
     close(f)
     i_data != 0 && CSV.write(outfile, outdata[1:i_data, :]; append=true)
@@ -214,32 +214,32 @@ function datacols_match_schemacols!(issues, tableschema::TableSchema, colnames_d
 end
 
 "Values are separated by delim."
-function extract_row!(row::Dict{Symbol, Any}, line::String, delim::String, colnames::Vector{Symbol}, stripchar::Nothing)
+function extract_row!(row::Dict{Symbol, Any}, line::String, delim::String, colnames::Vector{Symbol}, quotechar::Nothing)
     i_start = 1
-    ncols = length(colnames)
+    ncols   = length(colnames)
     for j = 1:ncols
         r = findnext(delim, line, i_start)  # r = i:i, where line[i] == delim
         if isnothing(r)  # If r is nothing then we're in the last column
-            row[colnames[j]] = strip(String(line[i_start:end]))
+            row[colnames[j]] = String(strip(line[i_start:end]))
             break
         else
             i_end = r[1] - 1
-            row[colnames[j]] = strip(String(line[i_start:i_end]))
+            row[colnames[j]] = String(strip(line[i_start:i_end]))
             i_start = i_end + 2
         end
     end
 end
 
-"Values are separated by stripchar."
-function extract_row!(row::Dict{Symbol, Any}, line::String, delim::String, colnames::Vector{Symbol}, stripchar::String)
-    i_start = 1
-    ncols = length(colnames)
+"Values are separated by delim and quoted by quotechar."
+function extract_row!(row::Dict{Symbol, Any}, line::String, delim::String, colnames::Vector{Symbol}, quotechar::String)
+    i_start    = 1
+    ncols      = length(colnames)
     linelength = length(line)
     for j = 1:ncols
-        r = findnext(stripchar, line, i_start)  # r = i:i, where line[i] == stripchar
+        r = findnext(quotechar, line, i_start)  # r = i:i, where line[i] == stripchar
         isnothing(r) && break
         i_start = r[1] + 1
-        r       = findnext(stripchar, line, i_start)
+        r       = findnext(quotechar, line, i_start)
         i_end   = r[1] - 1
         row[colnames[j]] = strip(String(line[i_start:i_end]))
         i_start = r[1] + 1
@@ -298,40 +298,39 @@ end
 function assess_row!(tableissues, columnissues, row, tableschema, uniquevalues)
     tablename = tableschema.name
     for (colname, colschema) in tableschema.columns
-        !haskey(columnissues, colname) && continue  # All possible issues for this column have already been found
         val = getval(row, colname)
         diagnose_value!(columnissues[colname], val, colschema, uniquevalues, tablename)
     end
 end
 
 getval(row::Dict, colname::Symbol) = row[colname]
-getval(row, colname::Symbol)       = getproperty(row, colname)
+getval(row,       colname::Symbol) = getproperty(row, colname)
 
 
-function diagnose_value!(columnissues::Dict{Symbol, Bool}, value::T, colschema::ColumnSchema, uniquevalues, tablename) where {T <: CategoricalValue} 
+function diagnose_value!(columnissues::Dict{Symbol, Int}, value::T, colschema::ColumnSchema, uniquevalues, tablename) where {T <: CategoricalValue} 
     diagnose_value!(columnissues, get(value), colschema, uniquevalues, tablename)
 end
 
 
-function diagnose_value!(columnissues::Dict{Symbol, Bool}, value, colschema::ColumnSchema, uniquevalues, tablename)
+function diagnose_value!(columnissues::Dict{Symbol, Int}, value, colschema::ColumnSchema, uniquevalues, tablename)
     # Ensure no missing data
-    if columnissues[:missingness_ok] && colschema.isrequired && ismissing(value)
-        columnissues[:missingness_ok] = false
+    if colschema.isrequired && ismissing(value)
+        columnissues[:n_missing] += 1
     end
 
     # Ensure unique data
-    if columnissues[:uniqueness_ok] && colschema.isunique
+    if colschema.isunique
         colname = colschema.name
         if in(value, uniquevalues[colname])
-            columnissues[:uniqueness_ok] = false
+            columnissues[:n_notunique] += 1
         elseif !ismissing(value)
             push!(uniquevalues[colname], value)
         end
     end
 
     # Ensure valid values
-    if columnissues[:values_are_valid] && !ismissing(value)
-        columnissues[:values_are_valid] = value_is_valid(value, colschema.validvalues)
+    if !ismissing(value) && !value_is_valid(value, colschema.validvalues)
+        columnissues[:n_invalid] += 1
     end
 end
 
@@ -377,33 +376,6 @@ function issues_ok!(columnissues::Dict{Symbol, Dict{Symbol, Bool}})
 end
 
 
-"""
-Returns: Issues table, populated, formated and sorted.
-
-Store table issues and column issues in issues, then format and sort.
-"""
-function storeissues(issues, tableissues, columnissues, tablename)
-    if !tableissues[:primarykey_isunique]
-        push!(issues, (entity="table", id="$(tablename)", issue="Primary key not unique."))
-    end
-    for msg in tableissues[:intrarow_constraints]
-        push!(issues, (entity="table", id="$(tablename)", issue="Intra-row constraint not satisfied: $(msg)"))
-    end
-    for (colname, d) in columnissues
-        if !d[:missingness_ok]
-            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="Missing data not allowed."))
-        end
-        if !d[:uniqueness_ok]
-            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="Values are not unique."))
-        end
-        if !d[:values_are_valid]
-            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="At least 1 value is not valid."))
-        end
-    end
-    issues = DataFrame(issues)
-    sort!(issues, (:entity, :id, :issue), rev=(true, false, false))
-end
-
 "Returns: A table with unpopulated columns with name, type, length and order matching the table schema."
 function init_outdata(tableschema::TableSchema, n::Int)
     result = DataFrame()
@@ -425,6 +397,39 @@ function init_outdata(infile::String, tableschema::TableSchema)
     end
     nr = Int(ceil(filesize(infile) / bytes_per_row))
     init_outdata(tableschema, min(nr, 1_000_000))
+end
+
+"""
+Returns: Issues table, populated, formated and sorted.
+
+Store table issues and column issues in issues, then format and sort.
+"""
+function storeissues(issues, tableissues, columnissues, tablename)
+    if !tableissues[:primarykey_isunique]
+        push!(issues, (entity="table", id="$(tablename)", issue="Primary key not unique."))
+    end
+    for msg in tableissues[:intrarow_constraints]
+        push!(issues, (entity="table", id="$(tablename)", issue="Intra-row constraint not satisfied: $(msg)"))
+    end
+    for (colname, d) in columnissues
+        if d[:n_missing] > 1
+            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="$(d[:n_missing]) rows have missing data."))
+        elseif d[:n_missing] == 1
+            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="1 row has missing data."))
+        end
+        if d[:n_notunique] > 1
+            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="$(d[:n_notunique]) rows are duplicates."))
+        elseif d[:n_notunique] == 1
+            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="1 row is a duplicate."))
+        end
+        if d[:n_invalid] > 1
+            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="$(d[:n_invalid]) rows contain invalid values."))
+        elseif d[:n_invalid] == 1
+            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="1 row contains an invalid value."))
+        end
+    end
+    issues = DataFrame(issues)
+    sort!(issues, (:entity, :id, :issue), rev=(true, false, false))
 end
 
 end
