@@ -127,11 +127,11 @@ end
 ################################################################################
 # diagnose_streaming_table!
 
-function diagnose_streaming_table(infile::String, tableschema::TableSchema, enforce::Bool=false, set_invalid_to_missing::Bool=true, outfile::String)
+function diagnose_streaming_table(infile::String, tableschema::TableSchema, enforce::Bool=false, set_invalid_to_missing::Bool=true, outfile::String="")
     tablename     = tableschema.name
     issues        = NamedTuple{(:entity, :id, :issue), Tuple{String, String, String}}[]
     outdata       = enforce ? init_outdata(infile, tableschema) : nothing
-    n_outdata     = size(outdata, 1)
+    n_outdata     = enforce ? size(outdata, 1) : 0
     tableissues   = Dict(:primarykey_isunique => true, :intrarow_constraints => Set{String}())
     columnissues  = Dict(col => Dict(:uniqueness_ok => true, :missingness_ok => true, :values_are_valid => true) for col in keys(tableschema.columns))
     colnames      = nothing
@@ -145,6 +145,9 @@ function diagnose_streaming_table(infile::String, tableschema::TableSchema, enfo
     i_data        = 0
     nconstraints  = length(tableschema.intrarow_constraints)
     colname2colschema = tableschema.columns
+    if enforce
+        CSV.write(outfile, init_outdata(tableschema, 0))  # Write column headers to disk
+    end
     f = open(infile)
     for line in eachline(f)
         if !colnames_done
@@ -164,13 +167,15 @@ function diagnose_streaming_table(infile::String, tableschema::TableSchema, enfo
             for (colname, val) in row
                 if !ismissing(val) && set_invalid_to_missing
                     colschema = colname2colschema[colname]
-                    outdata[i_data, colname] = value_is_valid(val, colschema.validvalues) ? val : missing
-                else
-                    outdata[i_data, colname] = val
+                    if !value_is_valid(val, colschema.validvalues)
+                        val = missing
+                        row[colname] = missing
+                    end
                 end
+                outdata[i_data, colname] = val
             end
             if i_data == n_outdata
-                CSV.write(outfile, outdata; delim='\t', append=true)
+                CSV.write(outfile, outdata; append=true)
                 i_data = 0  # Reset the row number
             end
         end
@@ -180,7 +185,7 @@ function diagnose_streaming_table(infile::String, tableschema::TableSchema, enfo
         !enforce && !issues_ok(tableissues) && !issues_ok!(columnissues) && break  # All possible issues have been detected
     end
     close(f)
-    i_data != 0 && CSV.write(outfile, outdata[1:i_data, :]; delim='\t', append=true)
+    i_data != 0 && CSV.write(outfile, outdata[1:i_data, :]; append=true)
     storeissues(issues, tableissues, columnissues, tablename)
 end
 
@@ -366,7 +371,7 @@ function storeissues(issues, tableissues, columnissues, tablename)
             push!(issues, (entity="column", id="$(tablename).$(colname)", issue="Values are not unique."))
         end
         if !d[:values_are_valid]
-            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="Values are not valid."))
+            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="At least 1 value is not valid."))
         end
     end
     issues = DataFrame(issues)
