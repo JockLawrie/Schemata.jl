@@ -2,7 +2,7 @@
 
 A `Schema` is a specification of a data set, which may contain more than 1 table.
 
-It exists independently of any particular data set, and therefore can be constructed and modified in the absence of a data set.
+It exists independently of any particular data set, and therefore can be constructed in the absence of a data set.
 
 This package facilitates 3 use cases:
 
@@ -51,7 +51,7 @@ For tables that fit into memory, usage is as follows:
 using Schemata
 
 schema = readschema(joinpath(dirname(pathof(Schemata)), "..", "test/schemata/fever.yaml"))
-ts     = TableSchema(schema, :mytable)  # TableSchema for mytable
+ts     = schema.tables[:mytable]  # TableSchema for mytable
 
 # Construct/import a table (any object that satisfies the Tables.jl interface)
 using DataFrames

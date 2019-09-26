@@ -87,11 +87,11 @@ function TableSchema(d::Dict)
     description = d["description"]
     pk          = d["primarykey"]  # String or Vector{String}
     primarykey  = typeof(pk) == String ? [Symbol(pk)] : [Symbol(colname) for colname in pk]
-    cols        = d["columns"]
+    columns     = d["columns"]
+    columnorder = fill(Symbol("x"), size(columns, 1))
     colname2colschema = Dict{Symbol, ColumnSchema}()
-    columnorder = fill(Symbol("x"), size(cols, 1))
     i = 0
-    for colname2schema in cols
+    for colname2schema in columns
         for (colname, colschema) in colname2schema
             i += 1
             columnorder[i]    = Symbol(colname)

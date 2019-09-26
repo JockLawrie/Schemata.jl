@@ -5,24 +5,11 @@ export readschema
 using YAML
 using ..types
 
-
+"Returns either a Schema or a TableSchema, depending on the contents of the config file."
 function readschema(filename::String)
-    # Read yaml
-    io = open(filename)
-    d  = YAML.load(io)
-    close(io)
-    length(d) > 1 && error("File $(filename) contains an incorrectly specified schema.")
-
-    # Get schema name
-    schema = ""
-    schema_name = ""
-    for (k, v) in d
-        schema_name = k
-        schema = v
-        break
-    end
-    schema["name"] = schema_name
-    Schema(schema)
+    d = YAML.load_file(filename)
+    haskey(d, "columns") && return TableSchema(d)  # Config is for a TableSchema
+    Schema(d)  # Config is for a Schema
 end
 
 end
