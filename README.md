@@ -36,11 +36,11 @@ columns:
 A `Schema` contains 1 or more `TableSchema`. For example:
 
 ```YAML
-fever:
-  description: "Fever schema"
-  tables:
-    table1: *table1_schema
-    table2: *table2_schema
+name: fever
+description: "Fever schema"
+tables:
+  table1: *table1_schema
+  table2: *table2_schema
 ```
 
 For tables that fit into memory, usage is as follows:
@@ -151,3 +151,27 @@ table = DataFrame(zdt=[string(ZonedDateTime(DateTime(today() - Day(7)) + Hour(i)
 table, issues = enforce_schema(table, ts);
 table[!, :zdt] == target
 ```
+
+# Intra-Row Constraints
+
+We often want to ensure that certain relationships hold between variables in a row.
+For example, we might require that a person's marriage date is after his/her birth date.
+We can achieve this by specifying an intra-row constraint in a `TableSchema` as follows:
+
+```yaml
+name: dates
+description: "Table with date constraints"
+primarykey: patientid
+intrarow_constraints:
+  birth date before marriage date: "r[:dob] < r[:date_of_marriage]"
+columns:
+  - id:  {description: ID, datatype: UInt, iscategorical: false, isrequired: true, isunique: true, validvalues: UInt}
+  - dob: {description: Date of birth, datatype: Date, iscategorical: false, isrequired: true, isunique: false, validvalues: Date}
+  - date_of_marriage: {description: Date of marriage, datatype: Date, iscategorical: false, isrequired: false, isunique: false, validvalues: Date}
+```
+
+The constraint is specified as a key-value pair, where a description of the constraint is the key and
+the right-hand side of a function of a row `r` is the value.
+The function must return `true` or `false`.
+When comparing the schema to a table, the function is run on each row.
+If the function is `false` for a row, the constraint isn't satisfied and its description is recorded in the returned issues table.

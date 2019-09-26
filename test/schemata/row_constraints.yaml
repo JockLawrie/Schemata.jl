@@ -21,7 +21,7 @@ tables:
         isunique: false
         validvalues: Date
     - date_of_marriage:
-        description: Date of marriage 
+        description: Date of marriage
         datatype: Date
         iscategorical: false
         isrequired: false

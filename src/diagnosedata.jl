@@ -47,7 +47,7 @@ function diagnose_inmemory_table(table, tableschema::TableSchema, enforce::Bool)
     tablename     = tableschema.name
     issues        = NamedTuple{(:entity, :id, :issue), Tuple{String, String, String}}[]
     outdata       = enforce ? init_outdata(tableschema, size(table, 1)) : nothing
-    tableissues   = Dict(:primarykey_isunique => true, :intrarow_constraints => Set{String}())
+    tableissues   = Dict(:primarykey_isunique => true, :intrarow_constraints => Dict{String, Int}())
     columnissues  = Dict(colname => Dict(:n_notunique => 0, :n_missing => 0, :n_invalid => 0) for colname in keys(tableschema.colname2colschema))
     colnames      = propertynames(table)
     primarykey    = fill("", length(tableschema.primarykey))
@@ -84,11 +84,11 @@ function diagnose_inmemory_table(table, tableschema::TableSchema, enforce::Bool)
                 outdata[i_data, colname] = value_is_valid(val, colschema.validvalues) ? val : missing
             end
             assess_row!(tableissues, columnissues, rowdict, tableschema, uniquevalues)
-            length(tableissues[:intrarow_constraints]) == nconstraints && continue # All constraints have already been breached
+            nconstraints == 0 && continue
             test_intrarow_constraints!(tableissues[:intrarow_constraints], tableschema, rowdict)
         else
             assess_row!(tableissues, columnissues, row, tableschema, uniquevalues)
-            length(tableissues[:intrarow_constraints]) == nconstraints && continue # All constraints have already been breached
+            nconstraints == 0 && continue
             for colname in propertynames(row)
                 rowdict[colname] = getproperty(row, colname)
             end
@@ -133,7 +133,7 @@ function diagnose_streaming_table(infile::String, tableschema::TableSchema, enfo
     end
     tablename     = tableschema.name
     issues        = NamedTuple{(:entity, :id, :issue), Tuple{String, String, String}}[]
-    tableissues   = Dict(:primarykey_isunique => true, :intrarow_constraints => Set{String}())
+    tableissues   = Dict(:primarykey_isunique => true, :intrarow_constraints => Dict{String, Int}())
     columnissues  = Dict(colname => Dict(:n_notunique => 0, :n_missing => 0, :n_invalid => 0) for colname in keys(tableschema.colname2colschema))
     colnames      = nothing
     colnames_done = false
@@ -188,7 +188,7 @@ function diagnose_streaming_table(infile::String, tableschema::TableSchema, enfo
             end
         end
         assess_row!(tableissues, columnissues, row, tableschema, uniquevalues)
-        length(tableissues[:intrarow_constraints]) == nconstraints && continue     # All constraints have already been breached
+        nconstraints == 0 && continue
         test_intrarow_constraints!(tableissues[:intrarow_constraints], tableschema, row)
     end
     close(f)
@@ -335,13 +335,16 @@ end
 Modified: constraint_issues.
 - row is a property accessible object: val = getproperty(row, colname)
 """
-function test_intrarow_constraints!(constraint_issues::Set{String}, tableschema::TableSchema, row::Dict{Symbol, Any})
+function test_intrarow_constraints!(constraint_issues::Dict{String, Int}, tableschema::TableSchema, row::Dict{Symbol, Any})
     for (msg, f) in tableschema.intrarow_constraints
-        in(msg, constraint_issues) && continue  # Have already recorded this issue
         ok = @eval $f($row)        # Hack to avoid world age problem.
         ismissing(ok) && continue  # This case is picked up at the column level
         ok && continue
-        push!(constraint_issues, msg)
+        if haskey(constraint_issues, msg)
+            constraint_issues[msg] += 1
+        else
+            constraint_issues[msg] = 1
+        end
     end
 end
 
@@ -377,8 +380,10 @@ function storeissues(issues, tableissues, columnissues, tablename, ntotal)
     if !tableissues[:primarykey_isunique]
         push!(issues, (entity="table", id="$(tablename)", issue="Primary key not unique."))
     end
-    for msg in tableissues[:intrarow_constraints]
-        push!(issues, (entity="table", id="$(tablename)", issue="Intra-row constraint not satisfied: $(msg)"))
+    for (constraint, nr) in tableissues[:intrarow_constraints]
+        p = make_pct_presentable(100.0 * nr / ntotal)
+        msg = "$(p)% ($(nr)/$(ntotal)) rows don't satisfy the constraint: $(constraint)"
+        push!(issues, (entity="table", id="$(tablename)", issue=msg))
     end
     for (colname, d) in columnissues
         store_column_issue!(issues, tablename, colname, d[:n_missing],   ntotal, "have missing data")
