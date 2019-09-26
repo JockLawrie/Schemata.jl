@@ -28,21 +28,15 @@ ts        = TableSchema(:mytable, "My table", [patientid, age, dose, fever], [:p
 issues = diagnose(infile, ts)
 @test size(issues, 1) == 0
 
-# Modify schema: Forbid the age columns from having values of 120 or above
+# Modify schema: Forbid the age column from having values of 120 or above
 age.validvalues = 0:120
 
 # Compare again
 issues = diagnose(infile, ts)
 @test size(issues, 1) == 1
 
-# Fix data: Attempt 1
-issues  = enforce_schema(infile, ts, false, outfile);
-outdata = DataFrame(CSV.File(outfile))
-@test size(issues, 1) == 1
-@test outdata[4, :age] == 444
-
 # Fix data: Attempt 2
-issues  = enforce_schema(infile, ts, true, outfile);
+issues  = enforce_schema(infile, ts, outfile);
 outdata = DataFrame(CSV.File(outfile))
 @test size(issues, 1) == 1
 @test ismissing(outdata[4, :age]) == true

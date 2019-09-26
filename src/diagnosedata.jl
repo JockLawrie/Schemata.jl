@@ -9,7 +9,7 @@ using Tables
 
 using ..CustomParsers
 using ..handle_validvalues
-using ..schematypes
+using ..types
 
 ################################################################################
 # API functions
@@ -33,35 +33,31 @@ There are 2 methods for diagnosing a table:
    This method is designed for tables that are too big for RAM.
    It diagnoses a table one row at a time.
 """
-diagnose(table, tableschema::TableSchema) = diagnose_inmemory_table(table, tableschema)
+diagnose(table, tableschema::TableSchema) = diagnose_inmemory_table(table, tableschema, false)
+enforce_schema(table, tableschema)        = diagnose_inmemory_table(table, tableschema, true)
 
-diagnose(datafile::String, tableschema::TableSchema) = diagnose_streaming_table(datafile, tableschema)
-
-enforce_schema(table, tableschema, set_invalid_to_missing) = diagnose_inmemory_table(table, tableschema, true, set_invalid_to_missing)
-
-function enforce_schema(datafile::String, tableschema, set_invalid_to_missing, outfile::String)
-    diagnose_streaming_table(datafile, tableschema, true, set_invalid_to_missing, outfile)
-end
+diagnose(datafile::String, tableschema::TableSchema)           = diagnose_streaming_table(datafile, tableschema, false, "")
+enforce_schema(datafile::String, tableschema, outfile::String) = diagnose_streaming_table(datafile, tableschema, true,  outfile)
 
 ################################################################################
 # diagnose_inmemory_table!
 
-function diagnose_inmemory_table(table, tableschema::TableSchema, enforce::Bool=false, set_invalid_to_missing::Bool=true)
+function diagnose_inmemory_table(table, tableschema::TableSchema, enforce::Bool)
     # Init
     tablename     = tableschema.name
     issues        = NamedTuple{(:entity, :id, :issue), Tuple{String, String, String}}[]
     outdata       = enforce ? init_outdata(tableschema, size(table, 1)) : nothing
     tableissues   = Dict(:primarykey_isunique => true, :intrarow_constraints => Set{String}())
-    columnissues  = Dict(colname => Dict(:n_notunique => 0, :n_missing => 0, :n_invalid => 0) for colname in keys(tableschema.columns))
+    columnissues  = Dict(colname => Dict(:n_notunique => 0, :n_missing => 0, :n_invalid => 0) for colname in keys(tableschema.colname2colschema))
     colnames      = propertynames(table)
     primarykey    = fill("", length(tableschema.primarykey))
     pk_colnames   = tableschema.primarykey
     pkvalues      = Set{String}()  # Values of the primary key
-    uniquevalues  = Dict(colname => Set{colschema.datatype}() for (colname, colschema) in tableschema.columns if colschema.isunique==true)
+    uniquevalues  = Dict(colname => Set{colschema.datatype}() for (colname, colschema) in tableschema.colname2colschema if colschema.isunique==true)
     rowdict       = Dict{Symbol, Any}()
     i_data        = 0
     nconstraints  = length(tableschema.intrarow_constraints)
-    colname2colschema = tableschema.columns
+    colname2colschema = tableschema.colname2colschema
     datacols_match_schemacols!(issues, tableschema, Set(colnames))  # Run this on table (not on outdata) so that missing indata columns are reported
 
     # Row-level checks
@@ -82,13 +78,10 @@ function diagnose_inmemory_table(table, tableschema::TableSchema, enforce::Bool=
             end
             parserow!(colname2colschema, rowdict)  # Parse rowdict
             for (colname, val) in rowdict          # Write rowdict to outdata
+                ismissing(val) && continue
                 !haskey(colname2colschema, colname) && continue
-                if !ismissing(val) && set_invalid_to_missing
-                    colschema = colname2colschema[colname]
-                    outdata[i_data, colname] = value_is_valid(val, colschema.validvalues) ? val : missing
-                else
-                    outdata[i_data, colname] = val
-                end
+                colschema = colname2colschema[colname]
+                outdata[i_data, colname] = value_is_valid(val, colschema.validvalues) ? val : missing
             end
             assess_row!(tableissues, columnissues, rowdict, tableschema, uniquevalues)
             length(tableissues[:intrarow_constraints]) == nconstraints && continue # All constraints have already been breached
@@ -100,12 +93,11 @@ function diagnose_inmemory_table(table, tableschema::TableSchema, enforce::Bool=
                 rowdict[colname] = getproperty(row, colname)
             end
             test_intrarow_constraints!(tableissues[:intrarow_constraints], tableschema, rowdict)
-            #!issues_ok(tableissues) && !issues_ok!(columnissues) && break  # All possible issues have been detected
         end
     end
 
     # Column-level checks
-    for (colname, colschema) in tableschema.columns
+    for (colname, colschema) in colname2colschema
         if enforce && colschema.iscategorical
             categorical!(outdata, colname)
         end
@@ -128,29 +120,34 @@ end
 ################################################################################
 # diagnose_streaming_table!
 
-function diagnose_streaming_table(infile::String, tableschema::TableSchema, enforce::Bool=false, set_invalid_to_missing::Bool=true, outfile::String="")
+function diagnose_streaming_table(infile::String, tableschema::TableSchema, enforce::Bool, outfile::String)
+    if enforce
+        outdir    = dirname(outfile)  # outdir = "" means outfile is in the pwd()
+        outdir   != "" && !isdir(outdir) && error("The directory containing the specified output file does not exist.")
+        outdata   = init_outdata(infile, tableschema)
+        n_outdata = size(outdata, 1)
+        CSV.write(outfile, init_outdata(tableschema, 0))  # Write column headers to disk
+    else
+        outdata   = nothing
+        n_outdata = 0
+    end
     tablename     = tableschema.name
     issues        = NamedTuple{(:entity, :id, :issue), Tuple{String, String, String}}[]
-    outdata       = enforce ? init_outdata(infile, tableschema) : nothing
-    n_outdata     = enforce ? size(outdata, 1) : 0
     tableissues   = Dict(:primarykey_isunique => true, :intrarow_constraints => Set{String}())
-    columnissues  = Dict(colname => Dict(:n_notunique => 0, :n_missing => 0, :n_invalid => 0) for colname in keys(tableschema.columns))
+    columnissues  = Dict(colname => Dict(:n_notunique => 0, :n_missing => 0, :n_invalid => 0) for colname in keys(tableschema.colname2colschema))
     colnames      = nothing
     colnames_done = false
     pk_colnames   = tableschema.primarykey
     primarykey    = fill("", length(pk_colnames))
     pkvalues      = Set{String}()  # Values of the primary key
-    uniquevalues  = Dict(colname => Set{colschema.datatype}() for (colname, colschema) in tableschema.columns if colschema.isunique==true)
+    uniquevalues  = Dict(colname => Set{colschema.datatype}() for (colname, colschema) in tableschema.colname2colschema if colschema.isunique==true)
     delim         = infile[(end - 2):end] == "csv" ? "," : "\t"
     row           = Dict{Symbol, Any}()
     nr            = 0  # Total number of rows in the table
     i_data        = 0
     nconstraints  = length(tableschema.intrarow_constraints)
     quotechar     = nothing  # In some files values are delimited and quoted. E.g., line = "\"v1\", \"v2\", ...".
-    colname2colschema = tableschema.columns
-    if enforce
-        CSV.write(outfile, init_outdata(tableschema, 0))  # Write column headers to disk
-    end
+    colname2colschema = tableschema.colname2colschema
     f = open(infile)
     for line in eachline(f)
         if !colnames_done
@@ -176,13 +173,12 @@ function diagnose_streaming_table(infile::String, tableschema::TableSchema, enfo
         if enforce  # Write row to outdata
             i_data += 1
             for (colname, val) in row
+                ismissing(val) && continue
                 !haskey(colname2colschema, colname) && continue
-                if !ismissing(val) && set_invalid_to_missing
-                    colschema = colname2colschema[colname]
-                    if !value_is_valid(val, colschema.validvalues)
-                        val = missing
-                        row[colname] = missing
-                    end
+                colschema = colname2colschema[colname]
+                if !value_is_valid(val, colschema.validvalues)
+                    val = missing
+                    row[colname] = missing
                 end
                 outdata[i_data, colname] = val
             end
@@ -194,7 +190,6 @@ function diagnose_streaming_table(infile::String, tableschema::TableSchema, enfo
         assess_row!(tableissues, columnissues, row, tableschema, uniquevalues)
         length(tableissues[:intrarow_constraints]) == nconstraints && continue     # All constraints have already been breached
         test_intrarow_constraints!(tableissues[:intrarow_constraints], tableschema, row)
-        #!enforce && !issues_ok(tableissues) && !issues_ok!(columnissues) && break  # All possible issues have been detected
     end
     close(f)
     i_data != 0 && CSV.write(outfile, outdata[1:i_data, :]; append=true)
@@ -299,7 +294,7 @@ end
 
 function assess_row!(tableissues, columnissues, row, tableschema, uniquevalues)
     tablename = tableschema.name
-    for (colname, colschema) in tableschema.columns
+    for (colname, colschema) in tableschema.colname2colschema
         val = getval(row, colname)
         diagnose_value!(columnissues[colname], val, colschema, uniquevalues, tablename)
     end
@@ -336,7 +331,6 @@ function diagnose_value!(columnissues::Dict{Symbol, Int}, value, colschema::Colu
     end
 end
 
-
 """
 Modified: constraint_issues.
 - row is a property accessible object: val = getproperty(row, colname)
@@ -351,38 +345,11 @@ function test_intrarow_constraints!(constraint_issues::Set{String}, tableschema:
     end
 end
 
-
-"Returns: True if there are no table-level issues."
-function issues_ok(tableissues::Dict{Symbol, Any})
-    !tableissues[:primarykey_isunique] && return false
-    isempty(tableissues[:intrarow_constraints])
-end
-
-
-"""
-Modified: columnissues (key-value pair is removed if the value contains only false).
-
-Return: True if at least 1 column has at least 1 ok.
-"""
-function issues_ok!(columnissues::Dict{Symbol, Dict{Symbol, Bool}})
-    for (colname, d) in columnissues
-        n_ok = length(d)
-        for (issue, ok) in d
-            ok && continue
-            n_ok -= 1
-        end
-        n_ok > 0 && continue
-        delete!(columnissues, colname)  # colname has all possible issues...no need to test it on other rows
-    end
-    length(columnissues) > 0
-end
-
-
 "Returns: A table with unpopulated columns with name, type, length and order matching the table schema."
 function init_outdata(tableschema::TableSchema, n::Int)
     result = DataFrame()
     for colname in tableschema.columnorder
-        colschema = tableschema.columns[colname]
+        colschema = tableschema.colname2colschema[colname]
         result[!, colname] = missings(colschema.datatype, n)
     end
     result
@@ -394,7 +361,7 @@ Estimates the number of required rows using: filesize = bytes_per_row * nrows
 """
 function init_outdata(infile::String, tableschema::TableSchema)
     bytes_per_row = 0
-    for (colname, colschema) in tableschema.columns
+    for (colname, colschema) in tableschema.colname2colschema
         bytes_per_row += colschema.datatype == String ? 30 : 8  # Allow 30 bytes for Strings, 8 bytes for all other data types
     end
     nr = Int(ceil(filesize(infile) / bytes_per_row))

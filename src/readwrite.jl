@@ -3,7 +3,7 @@ module readwrite
 export readschema
 
 using YAML
-using ..schematypes
+using ..types
 
 
 function readschema(filename::String)

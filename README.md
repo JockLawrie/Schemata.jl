@@ -25,7 +25,7 @@ A `TableSchema` looks like this `yaml` file:
 ```YAML
 name: mytable
 description: "My table"
-primarykey: patientid
+primarykey: patientid  # A column name or a vector of column names
 columns:
   - patientid: {description: Patient ID,  datatype: UInt,   iscategorical: false, isrequired: true, isunique: true,  validvalues: UInt}
   - age:       {description: Age (years), datatype: Int,    iscategorical: false, isrequired: true, isunique: false, validvalues: "0:120"}
@@ -40,8 +40,8 @@ A `Schema` contains 1 or more `TableSchema`. For example:
 fever:
   description: "Fever schema"
   tables:
-    table1: &table1
-    table1: &table1
+    table1: *table1_schema
+    table2: *table2_schema
 ```
 
 For tables that fit into memory, usage is as follows:
@@ -81,7 +81,7 @@ issues   = diagnose(filename, ts)
 
 # Transform the table to comply with the schema, writing the result to outfile.
 # Return a table of remaining issues.
-# Unparseable and invalid values are set to missing.
+# Values that are unparseable or invalid are set to missing.
 outfile = "/path/to/transformed_table.tsv"
 issues  = enforce_schema(filename, ts, outfile)
 ```
@@ -98,7 +98,7 @@ A `CustomParser` has the form:
 
 ```julia
 struct CustomParser
-    func::Function
+    func::Union{Function, DataType}
     args::Vector
     kwargs::Dict
     returntype::DataType
@@ -108,7 +108,7 @@ end
 Calling `parse(myparser, value)` returns a value with type `myparser.returntype`.
 
 A `CustomParser` can be constructed from a `Dict`, and therefore can be specified in a configuration file.
-For example, the following code from the test suite defines a `CustomParser` for a `ZonedDateTime` (from the `TimeZones` package).
+For example, the following code from the test suite defines a `CustomParser` for a `ZonedDateTime`.
 Note the specification of a range of non-`Core` types, namely `(startvalue, stepsize, endvalue)`.
 
 ```julia

@@ -46,33 +46,29 @@ issues = diagnose(tbl, ts)
 @test size(issues, 1) == 0
 
 # Modify schema: Forbid tbl[:age] having values of 120 or above
-schema.tables[:mytable].columns[:age].validvalues = 0:120
+schema.tables[:mytable].colname2colschema[:age].validvalues = 0:120
 
 # Compare again
 issues = diagnose(tbl, schema.tables[:mytable])
 @test size(issues, 1) == 1
 
 # Fix data: Attempt 1
-tbl, issues = enforce_schema(tbl, schema.tables[:mytable], false);
-@test size(issues, 1) == 1
-@test tbl[4, :age] == 444
-
-# Fix data: Attempt 2
-tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
+tbl, issues = enforce_schema(tbl, schema.tables[:mytable]);
 @test size(issues, 1) == 1
 @test ismissing(tbl[4, :age]) == true
 
-# Fix data: Attempt 3
+# Fix data: Attempt 2
 tbl[4, :age] = 44
 issues = diagnose(tbl, schema.tables[:mytable])
 @test size(issues, 1) == 0
 
 # Add a new column to the schema
 zipcode = ColumnSchema(:zipcode, "Zip code", Int, CATEGORICAL, !REQUIRED, !UNIQUE, 10000:99999)
-insertcolumn!(schema.tables[:mytable], zipcode)
+schema.tables[:mytable].colname2colschema[:zipcode] = zipcode
+push!(schema.tables[:mytable].columnorder, :zipcode)
 @test schema.tables[:mytable].columnorder[end] == :zipcode
-@test haskey(schema.tables[:mytable].columns, :zipcode)
-@test schema.tables[:mytable].columns[:zipcode] == zipcode
+@test haskey(schema.tables[:mytable].colname2colschema, :zipcode)
+@test schema.tables[:mytable].colname2colschema[:zipcode] == zipcode
 
 # Write the updated schema to disk
 #schemafile = joinpath(dirname(pathof(Schemata)), "..", "test/schemata/fever_updated.yaml")
@@ -86,18 +82,19 @@ issues = diagnose(tbl, schema.tables[:mytable])
 @test size(issues, 1) == 3
 
 # Fix the data
-tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
+tbl, issues = enforce_schema(tbl, schema.tables[:mytable]);
 @test size(issues, 1) == 0
 
 # Add a new column to the schema
 dosedate = ColumnSchema(:date, "Dose date", Date, CATEGORICAL, !REQUIRED, !UNIQUE, Date)
-insertcolumn!(schema.tables[:mytable], dosedate)
+schema.tables[:mytable].colname2colschema[:date] = dosedate
+push!(schema.tables[:mytable].columnorder, :date)
 
 # Add a corresponding (compliant) column to the data
 tbl[!, :date] = ["2017-12-01", "2017-12-01", "2017-12-11", "2017-12-09"];
 issues = diagnose(tbl, schema.tables[:mytable])
 @test size(issues, 1) == 3
-tbl, issues = enforce_schema(tbl, schema.tables[:mytable], true);
+tbl, issues = enforce_schema(tbl, schema.tables[:mytable]);
 @test size(issues, 1) == 0
 
 ################################################################################
@@ -130,15 +127,15 @@ ts = TableSchema(:mytable, "My table", [cs], [:zdt])
 
 tbl = DataFrame(zdt=[DateTime(today() - Day(7)) + Hour(i) for i = 1:3])
 target = [ZonedDateTime(tbl[i, :zdt], TimeZone("Australia/Melbourne")) for i = 1:3]
-tbl, issues = enforce_schema(tbl, ts, true);
+tbl, issues = enforce_schema(tbl, ts);
 @test tbl[!, :zdt] == target
 
 tbl = DataFrame(zdt=[string(DateTime(today() - Day(7)) + Hour(i)) for i = 1:3])  # String type
-tbl, issues = enforce_schema(tbl, ts, true);
+tbl, issues = enforce_schema(tbl, ts);
 @test tbl[!, :zdt] == target
 
 tbl = DataFrame(zdt=[string(ZonedDateTime(DateTime(today() - Day(7)) + Hour(i), TimeZone("Australia/Melbourne"))) for i = 1:3])  # String type
-tbl, issues = enforce_schema(tbl, ts, true);
+tbl, issues = enforce_schema(tbl, ts);
 @test tbl[!, :zdt] == target
 
 ################################################################################
