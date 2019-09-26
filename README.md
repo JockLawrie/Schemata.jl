@@ -10,13 +10,12 @@ This package facilitates 3 use cases:
 
 2. Compare a data set to a schema and list the non-compliance issues.
 
-3. Transform a data set to comply with a schema as much as possible (then rerun the compare function to see any outstanding issues).
+3. Transform a data set to comply with a schema as much as possible and return a table of outstanding issues.
 
 Although a schema can be specified in code, it is more practical to specify it in a configuration file.
 This has the added benefit of sharing it with non-technical data custodians and researchers,
 providing a common language for discussing data-related issues.
-Indeed the 3 use cases listed above can be carried out without writing any Julia code;
-just call one of the scripts in the `scripts` directory.
+Indeed the 3 use cases listed above can be carried out without writing any Julia code - just call one of the scripts in the `scripts` directory.
 
 # Usage
 
