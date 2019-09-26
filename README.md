@@ -156,7 +156,7 @@ table[!, :zdt] == target
 
 We often want to ensure that certain relationships hold between variables in a row.
 For example, we might require that a person's marriage date is after his/her birth date.
-We can achieve this by specifying an intra-row constraint in a `TableSchema` as follows:
+We can achieve this by specifying one or more intra-row constraints in a `TableSchema` as follows:
 
 ```yaml
 name: intrarow_constraints_demo
@@ -170,8 +170,8 @@ columns:
   - date_of_marriage: {description: Date of marriage, datatype: Date, iscategorical: false, isrequired: false, isunique: false, validvalues: Date}
 ```
 
-The constraint is specified as a key-value pair, where a description of the constraint is the key and
-the right-hand side of a function of a row `r` is the value.
+The constraint is specified as a key-value pair, where the key is a description of the constraint and
+the value is the right-hand side of a function of a row `r`.
 The function must return `true` or `false`.
-When comparing the schema to a table, the function is run on each row.
-If the function is `false` for a row, the constraint isn't satisfied and its description is recorded in the returned issues table.
+When comparing the schema to a table, the function is executed on each row.
+If the function returns `false` for a row, the constraint isn't satisfied and its description is recorded in the returned issues table.
