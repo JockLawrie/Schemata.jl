@@ -159,9 +159,9 @@ For example, we might require that a person's marriage date is after his/her bir
 We can achieve this by specifying an intra-row constraint in a `TableSchema` as follows:
 
 ```yaml
-name: dates
-description: "Table with date constraints"
-primarykey: patientid
+name: intrarow_constraints_demo
+description: "Table with intra-row constraints"
+primarykey: id
 intrarow_constraints:
   birth date before marriage date: "r[:dob] < r[:date_of_marriage]"
 columns:
