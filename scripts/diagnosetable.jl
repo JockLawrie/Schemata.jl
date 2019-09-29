@@ -1,11 +1,11 @@
 #=
   Run this script as follows:
   $ cd /path/to/Schemata.jl
-  $ julia /path/to/this/script /path/to/data`/path/to/config.yaml {tablename}
+  $ /path/to/julia scripts/diagnosetable.jl /path/to/config.yaml /path/to/data {tablename}
 =#
 
-datafile   = ARGS[1]
-configfile = ARGS[2]
+configfile = ARGS[1]
+datafile   = ARGS[2]
 tablename  = length(ARGS) == 3 ? ARGS[3] : nothing
 
 using Pkg
@@ -38,8 +38,9 @@ end
 issues = diagnose(datafile, ts)
 
 # Write output to disk
-issues_outfile = joinpath(dirname(datafile), "issues.tsv")
-CSV.write(issues_outfile, issues)
+bname, ext     = splitext(basename(datafile))
+issues_outfile = joinpath(dirname(datafile), "$(bname)_issues.tsv")
+CSV.write(issues_outfile, issues; delim='\t')
 
 # Inform the user
 println("A table of issues has been stored at $(issues_outfile).")

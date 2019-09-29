@@ -1,7 +1,7 @@
 #=
   Run this script as follows:
   $ cd /path/to/Schemata.jl
-  $ julia /path/to/this/script /path/to/config.yaml /path/to/data`{tablename}
+  $ /path/to/julia scripts/enforece_schema.jl /path/to/config.yaml /path/to/data {tablename}
 =#
 
 configfile = ARGS[1]
@@ -40,8 +40,8 @@ data_outfile = joinpath(dirname(datafile), "$(bname)_transformed$(ext)")
 issues = enforce_schema(datafile, ts, data_outfile)
 
 # Write output to disk
-issues_outfile = joinpath(dirname(datafile), "issues.tsv")
-CSV.write(issues_outfile, issues)
+issues_outfile = joinpath(dirname(datafile), "$(bname)_issues.tsv")
+CSV.write(issues_outfile, issues; delim='\t')
 
 # Inform the user
 println("A transformed table has been stored at $(data_outfile).")
