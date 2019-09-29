@@ -47,7 +47,7 @@ function diagnose_inmemory_table(table, tableschema::TableSchema, enforce::Bool)
     tablename     = tableschema.name
     issues        = NamedTuple{(:entity, :id, :issue), Tuple{String, String, String}}[]
     outdata       = enforce ? init_outdata(tableschema, size(table, 1)) : nothing
-    tableissues   = Dict(:primarykey_isunique => true, :intrarow_constraints => Dict{String, Int}())
+    tableissues   = Dict(:primarykey_duplicates => 0, :intrarow_constraints => Dict{String, Int}())
     columnissues  = Dict(colname => Dict(:n_notunique => 0, :n_missing => 0, :n_invalid => 0) for colname in keys(tableschema.colname2colschema))
     colnames      = propertynames(table)
     primarykey    = fill("", length(tableschema.primarykey))
@@ -63,7 +63,7 @@ function diagnose_inmemory_table(table, tableschema::TableSchema, enforce::Bool)
     # Row-level checks
     for row in Tables.rows(table)
         i_data += 1
-        if length(pk_colnames) > 1 && tableissues[:primarykey_isunique] # Uniqueness of 1-column primary keys is checked at the column level
+        if length(pk_colnames) > 1  # The uniqueness of 1-column primary keys is checked at the column level
             j = 0
             for colname in colnames
                 j  += 1
@@ -83,11 +83,11 @@ function diagnose_inmemory_table(table, tableschema::TableSchema, enforce::Bool)
                 colschema = colname2colschema[colname]
                 outdata[i_data, colname] = value_is_valid(val, colschema.validvalues) ? val : missing
             end
-            assess_row!(tableissues, columnissues, rowdict, tableschema, uniquevalues)
+            assess_row!(columnissues, rowdict, tableschema, uniquevalues)
             nconstraints == 0 && continue
             test_intrarow_constraints!(tableissues[:intrarow_constraints], tableschema, rowdict)
         else
-            assess_row!(tableissues, columnissues, row, tableschema, uniquevalues)
+            assess_row!(columnissues, row, tableschema, uniquevalues)
             nconstraints == 0 && continue
             for colname in propertynames(row)
                 rowdict[colname] = getproperty(row, colname)
@@ -133,7 +133,7 @@ function diagnose_streaming_table(infile::String, tableschema::TableSchema, enfo
     end
     tablename     = tableschema.name
     issues        = NamedTuple{(:entity, :id, :issue), Tuple{String, String, String}}[]
-    tableissues   = Dict(:primarykey_isunique => true, :intrarow_constraints => Dict{String, Int}())
+    tableissues   = Dict(:primarykey_duplicates => 0, :intrarow_constraints => Dict{String, Int}())
     columnissues  = Dict(colname => Dict(:n_notunique => 0, :n_missing => 0, :n_invalid => 0) for colname in keys(tableschema.colname2colschema))
     colnames      = nothing
     colnames_done = false
@@ -165,7 +165,7 @@ function diagnose_streaming_table(infile::String, tableschema::TableSchema, enfo
         end
         nr += 1
         extract_row!(row, line, delim, colnames, quotechar)  # row = Dict(colname => String(value), ...)
-        if length(pk_colnames) > 1 && tableissues[:primarykey_isunique] # Uniqueness of 1-column primary keys is checked at the column level
+        if length(pk_colnames) > 1  # The uniqueness of 1-column primary keys is checked at the column level
             populate_primarykey!(primarykey, pk_colnames::Vector{Symbol}, row)
             primarykey_isunique!(tableissues, primarykey, pkvalues)
         end
@@ -187,7 +187,7 @@ function diagnose_streaming_table(infile::String, tableschema::TableSchema, enfo
                 i_data = 0  # Reset the row number
             end
         end
-        assess_row!(tableissues, columnissues, row, tableschema, uniquevalues)
+        assess_row!(columnissues, row, tableschema, uniquevalues)
         nconstraints == 0 && continue
         test_intrarow_constraints!(tableissues[:intrarow_constraints], tableschema, row)
     end
@@ -259,7 +259,7 @@ end
 function primarykey_isunique!(tableissues, primarykey, pkvalues)
     pk = join(primarykey)
     if in(pk, pkvalues)
-        tableissues[:primarykey_isunique] = false
+        tableissues[:primarykey_duplicates] += 1
     else
         push!(pkvalues, pk)
     end
@@ -292,7 +292,7 @@ function parsevalue(colschema::ColumnSchema, value)
 end
 
 
-function assess_row!(tableissues, columnissues, row, tableschema, uniquevalues)
+function assess_row!(columnissues, row, tableschema, uniquevalues)
     tablename = tableschema.name
     for (colname, colschema) in tableschema.colname2colschema
         val = getval(row, colname)
@@ -377,8 +377,10 @@ Returns: Issues table, populated, formated and sorted.
 Store table issues and column issues in issues, then format and sort.
 """
 function storeissues(issues, tableissues, columnissues, tablename, ntotal)
-    if !tableissues[:primarykey_isunique]
-        push!(issues, (entity="table", id="$(tablename)", issue="Primary key not unique."))
+    if tableissues[:primarykey_duplicates] > 0
+        nd = tableissues[:primarykey_duplicates]
+        p  = make_pct_presentable(100.0 * nd / ntotal)
+        push!(issues, (entity="table", id="$(tablename)", issue="$(p)% ($(nd)/$(ntotal)) rows contain duplicated values of the primary key."))
     end
     for (constraint, nr) in tableissues[:intrarow_constraints]
         p = make_pct_presentable(100.0 * nr / ntotal)
