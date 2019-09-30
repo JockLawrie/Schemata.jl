@@ -11,4 +11,4 @@ const REQUIRED    = true
 const UNIQUE      = true
 
 include("test_inmemory_tables.jl")
-include("test_streamed_tables.jl")
+#include("test_streamed_tables.jl")

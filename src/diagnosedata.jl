@@ -1,6 +1,6 @@
 module diagnosedata
 
-export diagnose, enforce_schema
+export diagnose
 
 using CSV
 using DataFrames
@@ -15,15 +15,10 @@ using ..types
 # API functions
 
 """
-Returns: Vector of NamedTuples, each of which is a way in which the table does not comply with the schema.
-
-Example result:
-  :entity   :id        :issue
-   col      patientid  Incorrect data type (String)
-   col      patientid  Missing data not allowed
-   col      patientid  Values are not unique
-   col      gender     Invalid values ('d')
-   table    mytable    Primary key not unique
+Compares a table to a TableSchema and produces:
+- A copy of the input table, transformed as much as possible according to the schema.
+- A table of the ways in which the input table doesn't comply with the schema.
+- A table of the ways in which the output table doesn't comply with the schema.
 
 There are 2 methods for diagnosing a table:
 
@@ -33,88 +28,76 @@ There are 2 methods for diagnosing a table:
    This method is designed for tables that are too big for RAM.
    It diagnoses a table one row at a time.
 """
-diagnose(table, tableschema::TableSchema) = diagnose_inmemory_table(table, tableschema, false)
-enforce_schema(table, tableschema)        = diagnose_inmemory_table(table, tableschema, true)
+diagnose(table, tableschema::TableSchema) = diagnose_inmemory_table(table, tableschema)
 
-diagnose(datafile::String, tableschema::TableSchema)           = diagnose_streaming_table(datafile, tableschema, false, "")
-enforce_schema(datafile::String, tableschema, outfile::String) = diagnose_streaming_table(datafile, tableschema, true,  outfile)
+diagnose(datafile::String, tableschema::TableSchema) = diagnose_streaming_table(datafile, tableschema, false, "")
 
 ################################################################################
 # diagnose_inmemory_table!
 
-function diagnose_inmemory_table(table, tableschema::TableSchema, enforce::Bool)
+function diagnose_inmemory_table(indata, tableschema::TableSchema)
     # Init
     tablename     = tableschema.name
-    issues        = NamedTuple{(:entity, :id, :issue), Tuple{String, String, String}}[]
-    outdata       = enforce ? init_outdata(tableschema, size(table, 1)) : nothing
-    tableissues   = Dict(:primarykey_duplicates => 0, :intrarow_constraints => Dict{String, Int}())
-    columnissues  = Dict(colname => Dict(:n_notunique => 0, :n_missing => 0, :n_invalid => 0) for colname in keys(tableschema.colname2colschema))
-    colnames      = propertynames(table)
-    primarykey    = fill("", length(tableschema.primarykey))
+    outdata       = init_outdata(tableschema, size(indata, 1))
+    issues_in     = init_issues(tableschema)  # Issues for indata
+    issues_out    = init_issues(tableschema)  # Issues for outdata
+    colnames      = propertynames(indata)
+    primarykey    = fill("", length(tableschema.primarykey))  # Stringified primary key 
     pk_colnames   = tableschema.primarykey
-    pkvalues      = Set{String}()  # Values of the primary key
-    uniquevalues  = Dict(colname => Set{colschema.datatype}() for (colname, colschema) in tableschema.colname2colschema if colschema.isunique==true)
+    pkvalues_in   = Set{String}()  # Values of the primary key
+    pkvalues_out  = Set{String}()
     rowdict       = Dict{Symbol, Any}()
-    i_data        = 0
+    i_outdata     = 0
     nconstraints  = length(tableschema.intrarow_constraints)
     colname2colschema = tableschema.colname2colschema
-    datacols_match_schemacols!(issues, tableschema, Set(colnames))  # Run this on table (not on outdata) so that missing indata columns are reported
+    uniquevalues_in   = Dict(colname => Set{nonmissingtype(eltype(indata[!, colname]))}() for (colname, colschema) in colname2colschema if colschema.isunique==true)
+    uniquevalues_out  = Dict(colname => Set{colschema.datatype}() for (colname, colschema) in colname2colschema if colschema.isunique==true)
 
     # Row-level checks
-    for row in Tables.rows(table)
-        i_data += 1
-        if length(pk_colnames) > 1  # The uniqueness of 1-column primary keys is checked at the column level
-            j = 0
-            for colname in colnames
-                j  += 1
-                val = getproperty(row, colname)
-                primarykey[j] = ismissing(val) ? "" : string(val)
-            end
-            primarykey_isunique!(tableissues, primarykey, pkvalues)
+    for row in Tables.rows(indata)
+        # Assess input row
+        for colname in propertynames(row)
+            rowdict[colname] = getproperty(row, colname)
         end
-        if enforce
-            for colname in propertynames(row)      # Copy row to rowdict
-                rowdict[colname] = getproperty(row, colname)
-            end
-            parserow!(colname2colschema, rowdict)  # Parse rowdict
-            for (colname, val) in rowdict          # Write rowdict to outdata
-                ismissing(val) && continue
-                !haskey(colname2colschema, colname) && continue
-                colschema = colname2colschema[colname]
-                outdata[i_data, colname] = value_is_valid(val, colschema.validvalues) ? val : missing
-            end
-            assess_row!(columnissues, rowdict, tableschema, uniquevalues)
-            nconstraints == 0 && continue
-            test_intrarow_constraints!(tableissues[:intrarow_constraints], tableschema, rowdict)
-        else
-            assess_row!(columnissues, row, tableschema, uniquevalues)
-            nconstraints == 0 && continue
-            for colname in propertynames(row)
-                rowdict[colname] = getproperty(row, colname)
-            end
-            test_intrarow_constraints!(tableissues[:intrarow_constraints], tableschema, rowdict)
+        if length(pk_colnames) > 1  # The uniqueness of 1-column primary keys is checked at the column level
+            populate_primarykey!(primarykey, pk_colnames, row)
+            primarykey_isunique!(issues_in, primarykey, pkvalues_in)
+        end
+        assess_row!(issues_in[:columnissues], rowdict, tableschema, uniquevalues_in, false)
+        nconstraints > 0 && test_intrarow_constraints!(issues_in[:intrarow_constraints], tableschema, rowdict)
+
+        # Assess output row
+        parserow!(colname2colschema, rowdict)  # Transform rowdict according to the ColumnSchema
+        if length(pk_colnames) > 1
+            populate_primarykey!(primarykey, pk_colnames, row)
+            primarykey_isunique!(issues_out, primarykey, pkvalues_out)
+        end
+        assess_row!(issues_out[:columnissues], rowdict, tableschema, uniquevalues_out, true)
+        nconstraints > 0 && test_intrarow_constraints!(issues_out[:intrarow_constraints], tableschema, rowdict)
+
+        # Record output row
+        i_outdata += 1
+        for (colname, val) in rowdict
+            ismissing(val) && continue
+            !haskey(colname2colschema, colname) && continue
+            colschema = colname2colschema[colname]
+            outdata[i_outdata, colname] = val
         end
     end
 
     # Column-level checks
     for (colname, colschema) in colname2colschema
-        if enforce && colschema.iscategorical
-            categorical!(outdata, colname)
-        end
-        coldata    = enforce ? getproperty(outdata, colname) : getproperty(table, colname)
-        data_eltyp = colschema.iscategorical ? eltype(levels(coldata)) : Core.Compiler.typesubtract(eltype(coldata), Missing)
-        if data_eltyp != colschema.datatype  # Check data type matches that specified in the ColumnSchema
-            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="Data has type $(data_eltyp), schema requires $(colschema.datatype)."))
-        end
-        if colschema.iscategorical && !(coldata isa CategoricalVector)  # Ensure categorical values
-            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="Data is not categorical."))
-        end
+        !colschema.iscategorical && continue
+        categorical!(outdata, colname)
     end
+    datacols_match_schemacols!(issues_in, tableschema, Set(colnames))  # By construction this issue doesn't exist for outdata
+    compare_datatypes!(issues_in,  indata,  colname2colschema)
+    compare_datatypes!(issues_out, outdata, colname2colschema)
 
     # Format result
-    issues = storeissues(issues, tableissues, columnissues, tablename, i_data)
-    !enforce && return issues
-    outdata, issues
+    issues_in  = construct_issues_table(issues_in,  tableschema, i_outdata)
+    issues_out = construct_issues_table(issues_out, tableschema, i_outdata)
+    outdata, issues_in, issues_out
 end
 
 ################################################################################
@@ -166,7 +149,7 @@ function diagnose_streaming_table(infile::String, tableschema::TableSchema, enfo
         nr += 1
         extract_row!(row, line, delim, colnames, quotechar)  # row = Dict(colname => String(value), ...)
         if length(pk_colnames) > 1  # The uniqueness of 1-column primary keys is checked at the column level
-            populate_primarykey!(primarykey, pk_colnames::Vector{Symbol}, row)
+            populate_primarykey!(primarykey, pk_colnames, row)
             primarykey_isunique!(tableissues, primarykey, pkvalues)
         end
         parserow!(colname2colschema, row)  # row = Dict(colname => value, ...)
@@ -200,14 +183,49 @@ end
 ################################################################################
 # Non-API functions
 
+function init_issues(tableschema::TableSchema)
+    result = Dict(:primarykey_duplicates => 0, :intrarow_constraints => Dict{String, Int}(), :data_extra_cols => Symbol[], :data_missing_cols => Symbol[])
+    result[:columnissues] = Dict{Symbol, Dict{Symbol, Int}}()
+    for (colname, colschema) in tableschema.colname2colschema
+        d = Dict(:n_notunique => 0, :n_missing => 0, :n_invalid => 0, :different_datatypes => 0, :data_not_categorical => 0, :data_is_categorical => 0)
+        result[:columnissues][colname] = d
+    end
+    result
+end
+
 "Ensure the set of columns in the data matches that in the schema."
 function datacols_match_schemacols!(issues, tableschema::TableSchema, colnames_data::Set{Symbol})
     tablename       = String(tableschema.name)
     colnames_schema = Set(tableschema.columnorder)
     cols = setdiff(colnames_data, colnames_schema)
-    length(cols) > 0 && push!(issues, (entity="table", id=tablename, issue="The data has columns that the schema doesn't have ($(cols))."))
+    if length(cols) > 0
+        issues[:data_extra_cols] = sort!([x for x in cols])
+    end
     cols = setdiff(colnames_schema, colnames_data)
-    length(cols) > 0 && push!(issues, (entity="table", id=tablename, issue="The data is missing some columns that the Schema has ($(cols))."))
+    if length(cols) > 0
+        issues[:data_missing_cols] = sort!([x for x in cols])
+    end
+end
+
+"""
+Modified: issues.
+
+Checks whether each column and its schema are both categorical or both not categorical, and whether they have the same data types.
+"""
+function compare_datatypes!(issues, table, colname2colschema)
+    for (colname, colschema) in colname2colschema
+        coldata    = getproperty(table, colname)
+        data_eltyp = colschema.iscategorical ? eltype(levels(coldata)) : Core.Compiler.typesubtract(eltype(coldata), Missing)
+        if data_eltyp != colschema.datatype  # Check data type matches that specified in the ColumnSchema
+            issues[:columnissues][colname][:different_datatypes] = 1
+        end
+        if colschema.iscategorical && !(coldata isa CategoricalVector)  # Ensure categorical values
+            issues[:columnissues][colname][:data_not_categorical] = 1
+        end
+        if !colschema.iscategorical && coldata isa CategoricalVector    # Ensure non-categorical values
+            issues[:columnissues][colname][:data_is_categorical] = 1
+        end
+    end
 end
 
 "Values are separated by delim."
@@ -244,27 +262,24 @@ function extract_row!(row::Dict{Symbol, Any}, line::String, delim::String, colna
     end
 end
 
-
 "Modified: primarykey"
 function populate_primarykey!(primarykey::Vector{String}, pk_colnames::Vector{Symbol}, row)
     j = 0
     for colname in pk_colnames
         j += 1
-        primarykey[j] = row[colname]
+        primarykey[j] = string(row[colname])
     end
 end
 
-
 "Modified: tableissues, pkvalues."
-function primarykey_isunique!(tableissues, primarykey, pkvalues)
+function primarykey_isunique!(issues, primarykey, pkvalues)
     pk = join(primarykey)
     if in(pk, pkvalues)
-        tableissues[:primarykey_duplicates] += 1
+        issues[:primarykey_duplicates] += 1
     else
         push!(pkvalues, pk)
     end
 end
-
 
 """
 Modified: row
@@ -287,48 +302,59 @@ function parsevalue(colschema::ColumnSchema, value)
     try
         parse(colschema.parser, value)
     catch e
-        missing
+        try
+            convert(colschema.datatype, value)
+        catch e2
+            missing
+        end
     end
 end
 
-
-function assess_row!(columnissues, row, tableschema, uniquevalues)
+function assess_row!(columnissues, row, tableschema, uniquevalues, set_invalid_to_missing::Bool)
     tablename = tableschema.name
     for (colname, colschema) in tableschema.colname2colschema
         val = getval(row, colname)
-        diagnose_value!(columnissues[colname], val, colschema, uniquevalues, tablename)
+        val = diagnose_value!(columnissues[colname], val, colschema, uniquevalues, tablename, set_invalid_to_missing)
+        if ismissing(val)
+            row[colname] = val
+        end
     end
 end
 
 getval(row::Dict, colname::Symbol) = row[colname]
 getval(row,       colname::Symbol) = getproperty(row, colname)
 
-
-function diagnose_value!(columnissues::Dict{Symbol, Int}, value::T, colschema::ColumnSchema, uniquevalues, tablename) where {T <: CategoricalValue} 
-    diagnose_value!(columnissues, get(value), colschema, uniquevalues, tablename)
+function diagnose_value!(columnissues::Dict{Symbol, Int}, value::T, colschema::ColumnSchema, uniquevalues, tablename, set_invalid_to_missing) where {T <: CategoricalValue} 
+    diagnose_value!(columnissues, get(value), colschema, uniquevalues, tablename, set_invalid_to_missing)
 end
 
+function diagnose_value!(columnissues::Dict{Symbol, Int}, value::T, colschema::ColumnSchema, uniquevalues, tablename, set_invalid_to_missing) where {T <: CategoricalString} 
+    diagnose_value!(columnissues, get(value), colschema, uniquevalues, tablename, set_invalid_to_missing)
+end
 
-function diagnose_value!(columnissues::Dict{Symbol, Int}, value, colschema::ColumnSchema, uniquevalues, tablename)
+function diagnose_value!(columnissues::Dict{Symbol, Int}, value, colschema::ColumnSchema, uniquevalues, tablename, set_invalid_to_missing)
+    # Ensure valid values
+    if !ismissing(value) && !value_is_valid(value, colschema.validvalues)
+        columnissues[:n_invalid] += 1
+        if set_invalid_to_missing  # Only applied to outdata (not indata)
+            value = missing
+        end
+    end
+
     # Ensure no missing data
     if colschema.isrequired && ismissing(value)
         columnissues[:n_missing] += 1
     end
 
     # Ensure unique data
-    if colschema.isunique
-        colname = colschema.name
-        if in(value, uniquevalues[colname])
+    if colschema.isunique && !ismissing(value)
+        if in(value, uniquevalues[colschema.name])
             columnissues[:n_notunique] += 1
-        elseif !ismissing(value)
-            push!(uniquevalues[colname], value)
+        else
+            push!(uniquevalues[colschema.name], value)
         end
     end
-
-    # Ensure valid values
-    if !ismissing(value) && !value_is_valid(value, colschema.validvalues)
-        columnissues[:n_invalid] += 1
-    end
+    value
 end
 
 """
@@ -372,28 +398,45 @@ function init_outdata(infile::String, tableschema::TableSchema)
 end
 
 """
-Returns: Issues table, populated, formated and sorted.
-
-Store table issues and column issues in issues, then format and sort.
+Returns: Converts issues object to a formatted and sorted DataFrame.
 """
-function storeissues(issues, tableissues, columnissues, tablename, ntotal)
-    if tableissues[:primarykey_duplicates] > 0
-        nd = tableissues[:primarykey_duplicates]
-        p  = make_pct_presentable(100.0 * nd / ntotal)
-        push!(issues, (entity="table", id="$(tablename)", issue="$(p)% ($(nd)/$(ntotal)) rows contain duplicated values of the primary key."))
+function construct_issues_table(issues, tableschema, ntotal)
+    result    = NamedTuple{(:entity, :id, :issue), Tuple{String, String, String}}[]
+    tablename = tableschema.name
+    if !isempty(issues[:data_extra_cols])
+        push!(result, (entity="table", id=tablename, issue="The data has columns that the schema doesn't have ($(issues[:data_extra_cols]))."))
     end
-    for (constraint, nr) in tableissues[:intrarow_constraints]
+    if !isempty(issues[:data_missing_cols])
+        push!(result, (entity="table", id=tablename, issue="The data is missing some columns that the Schema has ($(issues[:data_missing_cols]))."))
+    end
+    if issues[:primarykey_duplicates] > 0
+        nd = issues[:primarykey_duplicates]
+        p  = make_pct_presentable(100.0 * nd / ntotal)
+        push!(result, (entity="table", id="$(tablename)", issue="$(p)% ($(nd)/$(ntotal)) rows contain duplicated values of the primary key."))
+    end
+    for (constraint, nr) in issues[:intrarow_constraints]
         p = make_pct_presentable(100.0 * nr / ntotal)
         msg = "$(p)% ($(nr)/$(ntotal)) rows don't satisfy the constraint: $(constraint)"
-        push!(issues, (entity="table", id="$(tablename)", issue=msg))
+        push!(result, (entity="table", id="$(tablename)", issue=msg))
     end
-    for (colname, d) in columnissues
-        store_column_issue!(issues, tablename, colname, d[:n_missing],   ntotal, "have missing data")
-        store_column_issue!(issues, tablename, colname, d[:n_notunique], ntotal, "are duplicates")
-        store_column_issue!(issues, tablename, colname, d[:n_invalid],   ntotal, "contain invalid values")
+    for (colname, colschema) in tableschema.colname2colschema
+        !haskey(issues[:columnissues], colname) && continue
+        d = issues[:columnissues][colname]
+        if d[:different_datatypes] > 0
+            push!(result, (entity="column", id="$(tablename).$(colname)", issue="The schema requires the data to have type $(colschema.datatype)."))
+        end
+        if d[:data_not_categorical] > 0
+            push!(result, (entity="column", id="$(tablename).$(colname)", issue="The data is not categorical."))
+        end
+        if d[:data_is_categorical] > 0
+            push!(issues, (entity="column", id="$(tablename).$(colname)", issue="The data is categorical but shouldn't be."))
+        end
+        store_column_issue!(result, tablename, colname, d[:n_missing],   ntotal, "have missing data")
+        store_column_issue!(result, tablename, colname, d[:n_notunique], ntotal, "are duplicates")
+        store_column_issue!(result, tablename, colname, d[:n_invalid],   ntotal, "contain invalid values")
     end
-    issues = DataFrame(issues)
-    sort!(issues, (:entity, :id, :issue), rev=(true, false, false))
+    result = DataFrame(result)
+    sort!(result, (:entity, :id, :issue), rev=(true, false, false))
 end
 
 "Example: 25% (250/1000) of rows contain invalid values."
