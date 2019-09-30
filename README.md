@@ -62,27 +62,26 @@ table = DataFrame(
     fever     = [false, true, true, false]
 )
 
-# Compare the table to the schema
-issues = diagnose(table, ts)
-
 # Transform the table to comply with the schema.
-# Return the resulting table as well as a table of remaining issues.
 # Values that are unparseable or invalid are set to missing.
-table2, issues = enforce_schema(table, ts)
+# Return the transformed data, a table of input data issues and a table of output data issues.
+outdata, input_issues, output_issues = diagnose(ts, table)
 ```
 
 For tables that are too big to fit into memory, replace the table argument with the filename of the table:
 
 ```julia
-# Compare the table to the schema
-filename = "/path/to/mytable.tsv"
-issues   = diagnose(filename, ts)
-
-# Transform the table to comply with the schema, writing the result to outfile.
-# Return a table of remaining issues.
+# Transform the table to comply with the schema.
 # Values that are unparseable or invalid are set to missing.
-outfile = "/path/to/transformed_table.tsv"
-issues  = enforce_schema(filename, ts, outfile)
+# Write the transformed data, a table of input data issues and a table of output data issues to disk.
+input_data_file    = "/path/to/mytable.tsv"
+output_data_file   = "/path/to/transformed_table.tsv"
+input_issues_file  = "/path/to/input_issues.tsv"
+output_issues_file = "/path/to/output_issues.tsv"
+diagnose(ts, input_data_file, output_data_file, input_issues_file, output_issues_file)
+
+# Or simply...
+diagnose(ts, input_data_file)  # output_data_file, input_issues_file, output_issues_file have default values
 ```
 
 # Custom Parsers
@@ -140,16 +139,16 @@ ts = TableSchema(:mytable, "My table", [cs], [:zdt])
 
 table  = DataFrame(zdt=[DateTime(today() - Day(7)) + Hour(i) for i = 1:3])
 target = [ZonedDateTime(table[i, :zdt], TimeZone("Australia/Melbourne")) for i = 1:3]
-table, issues = enforce_schema(table, ts);
-table[!, :zdt] == target
+outdata, issues_in, issues_out = diagnose(ts, table)
+outdata[!, :zdt] == target
 
 table = DataFrame(zdt=[string(DateTime(today() - Day(7)) + Hour(i)) for i = 1:3])  # String type
-table, issues = enforce_schema(table, ts);
-table[!, :zdt] == target
+outdata, issues_in, issues_out = diagnose(ts, table)
+outdata[!, :zdt] == target
 
 table = DataFrame(zdt=[string(ZonedDateTime(DateTime(today() - Day(7)) + Hour(i), TimeZone("Australia/Melbourne"))) for i = 1:3])  # String type
-table, issues = enforce_schema(table, ts);
-table[!, :zdt] == target
+outdata, issues_in, issues_out = diagnose(ts, table)
+outdata[!, :zdt] == target
 ```
 
 # Intra-Row Constraints

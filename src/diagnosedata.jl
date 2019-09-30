@@ -28,15 +28,14 @@ There are 2 methods for diagnosing a table:
    This method is designed for tables that are too big for RAM.
    It diagnoses a table one row at a time.
 """
-diagnose(table, tableschema::TableSchema) = diagnose_inmemory_table(table, tableschema)
-
-diagnose(datafile::String, tableschema::TableSchema) = diagnose_streaming_table(datafile, tableschema, "", "", "")
-diagnose(datafile::String, tableschema::TableSchema, data_outfile, issuesin_file, issuesout_file) = diagnose_streaming_table(datafile, tableschema, data_outfile, issuesin_file, issuesout_file) 
+diagnose(tableschema::TableSchema, table)               = diagnose_inmemory_table(tableschema, table)
+diagnose(tableschema::TableSchema, data_infile::String) = diagnose_streaming_table(tableschema, data_infile, "", "", "")
+diagnose(tableschema::TableSchema, data_infile::String, data_outfile, issuesin_file, issuesout_file) = diagnose_streaming_table(tableschema, data_infile, data_outfile, issuesin_file, issuesout_file) 
 
 ################################################################################
 # diagnose_inmemory_table!
 
-function diagnose_inmemory_table(indata, tableschema::TableSchema)
+function diagnose_inmemory_table(tableschema::TableSchema, indata)
     # Init
     tablename     = tableschema.name
     outdata       = init_outdata(tableschema, size(indata, 1))
@@ -103,7 +102,7 @@ end
 ################################################################################
 # diagnose_streaming_table!
 
-function diagnose_streaming_table(data_infile::String, tableschema::TableSchema, data_outfile::String="", issuesin_file::String="", issuesout_file::String="")
+function diagnose_streaming_table(tableschema::TableSchema, data_infile::String, data_outfile::String="", issuesin_file::String="", issuesout_file::String="")
     # Set output files
     if data_outfile == ""
         fname, ext = splitext(data_infile)
