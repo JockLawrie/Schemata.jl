@@ -65,7 +65,7 @@ table = DataFrame(
 # Transform the table to comply with the schema.
 # Values that are unparseable or invalid are set to missing.
 # Return the transformed data, a table of input data issues and a table of output data issues.
-outdata, input_issues, output_issues = diagnose(ts, table)
+outdata, input_issues, output_issues = compare(ts, table)
 ```
 
 For tables that are too big to fit into memory, replace the table argument with the filename of the table:
@@ -78,10 +78,10 @@ input_data_file    = "/path/to/mytable.tsv"
 output_data_file   = "/path/to/transformed_table.tsv"
 input_issues_file  = "/path/to/input_issues.tsv"
 output_issues_file = "/path/to/output_issues.tsv"
-diagnose(ts, input_data_file, output_data_file, input_issues_file, output_issues_file)
+compare(ts, input_data_file; output_data_file=output_data_file, input_issues_file=input_issues_file, output_issues_file=output_issues_file)
 
 # Or simply...
-diagnose(ts, input_data_file)  # output_data_file, input_issues_file, output_issues_file have default values
+compare(ts, input_data_file)  # output_data_file, input_issues_file, output_issues_file have default values
 ```
 
 # Custom Parsers
@@ -139,15 +139,15 @@ ts = TableSchema(:mytable, "My table", [cs], [:zdt])
 
 table  = DataFrame(zdt=[DateTime(today() - Day(7)) + Hour(i) for i = 1:3])
 target = [ZonedDateTime(table[i, :zdt], TimeZone("Australia/Melbourne")) for i = 1:3]
-outdata, issues_in, issues_out = diagnose(ts, table)
+outdata, issues_in, issues_out = compare(ts, table)
 outdata[!, :zdt] == target
 
 table = DataFrame(zdt=[string(DateTime(today() - Day(7)) + Hour(i)) for i = 1:3])  # String type
-outdata, issues_in, issues_out = diagnose(ts, table)
+outdata, issues_in, issues_out = compare(ts, table)
 outdata[!, :zdt] == target
 
 table = DataFrame(zdt=[string(ZonedDateTime(DateTime(today() - Day(7)) + Hour(i), TimeZone("Australia/Melbourne"))) for i = 1:3])  # String type
-outdata, issues_in, issues_out = diagnose(ts, table)
+outdata, issues_in, issues_out = compare(ts, table)
 outdata[!, :zdt] == target
 ```
 

@@ -1,6 +1,6 @@
-module diagnosedata
+module compare_data_to_schema
 
-export diagnose
+export compare
 
 using CSV
 using DataFrames
@@ -22,20 +22,22 @@ Compares a table to a TableSchema and produces:
 
 There are 2 methods for diagnosing a table:
 
-1. `diagnose(table, tableschema)` diagnoses an in-memory table.
+1. `compare(table, tableschema)` diagnoses an in-memory table.
 
-2. `diagnose(datafile::String, tableschema)` diagnoses a table located at `datafile`.
+2. `compare(tableschema, datafile::String)` diagnoses a table located at `datafile`.
    This method is designed for tables that are too big for RAM.
    It diagnoses a table one row at a time.
 """
-diagnose(tableschema::TableSchema, table)               = diagnose_inmemory_table(tableschema, table)
-diagnose(tableschema::TableSchema, data_infile::String) = diagnose_streaming_table(tableschema, data_infile, "", "", "")
-diagnose(tableschema::TableSchema, data_infile::String, data_outfile, issuesin_file, issuesout_file) = diagnose_streaming_table(tableschema, data_infile, data_outfile, issuesin_file, issuesout_file) 
+compare(tableschema::TableSchema, table) = compare_inmemory_table(tableschema, table)
+
+function compare(tableschema::TableSchema, input_data_file::String; output_data_file="", input_issues_file="", output_issues_file="")
+    compare_streaming_table(tableschema, input_data_file; output_data_file=output_data_file, input_issues_file=input_issues_file, output_issues_file=output_issues_file)
+end
 
 ################################################################################
-# diagnose_inmemory_table!
+# compare_inmemory_table
 
-function diagnose_inmemory_table(tableschema::TableSchema, indata)
+function compare_inmemory_table(tableschema::TableSchema, indata)
     # Init
     tablename     = tableschema.name
     outdata       = init_outdata(tableschema, size(indata, 1))
@@ -100,28 +102,28 @@ function diagnose_inmemory_table(tableschema::TableSchema, indata)
 end
 
 ################################################################################
-# diagnose_streaming_table!
+# compare_streaming_table
 
-function diagnose_streaming_table(tableschema::TableSchema, data_infile::String, data_outfile::String="", issuesin_file::String="", issuesout_file::String="")
+function compare_streaming_table(tableschema::TableSchema, input_data_file::String; output_data_file::String="", input_issues_file::String="", output_issues_file::String="")
     # Set output files
-    if data_outfile == ""
+    if output_data_file == ""
         fname, ext = splitext(data_infile)
-        data_outfile = "$(fname)_transformed.tsv"
+        output_data_file = "$(fname)_transformed.tsv"
     end
-    if issuesin_file == ""
+    if input_issues_file == ""
         fname, ext = splitext(data_infile)
-        issuesin_file = "$(fname)_input_issues.tsv"
+        input_issues_file = "$(fname)_input_issues.tsv"
     end
-    if issuesout_file == ""
+    if output_issues_file == ""
         fname, ext = splitext(data_infile)
-        issuesout_file = "$(fname)_output_issues.tsv"
+        output_issues_file = "$(fname)_output_issues.tsv"
     end
-    outdir  = dirname(data_outfile)  # outdir = "" means data_outfile is in the pwd()
+    outdir  = dirname(output_data_file)  # outdir = "" means output_data_file is in the pwd()
     outdir != "" && !isdir(outdir) && error("The directory containing the specified output file does not exist.")
 
     # Init
     tablename     = tableschema.name
-    outdata       = init_outdata(tableschema, data_infile)
+    outdata       = init_outdata(tableschema, input_data_file)
     issues_in     = init_issues(tableschema)  # Issues for indata
     issues_out    = init_issues(tableschema)  # Issues for outdata
     pk_colnames   = tableschema.primarykey
@@ -139,13 +141,13 @@ function diagnose_streaming_table(tableschema::TableSchema, data_infile::String,
     n_outdata     = size(outdata, 1)
     colnames      = nothing
     colnames_done = false
-    delim_indata  = data_infile[(end - 2):end] == "csv" ? "," : "\t"
-    delim_outdata = data_outfile[(end - 2):end] == "csv" ? "," : "\t"
-    delim_iniss   = issuesin_file[(end - 2):end] == "csv" ? "," : "\t"
-    delim_outiss  = issuesout_file[(end - 2):end] == "csv" ? "," : "\t"
+    delim_indata  = input_data_file[(end - 2):end] == "csv" ? "," : "\t"
+    delim_outdata = output_data_file[(end - 2):end] == "csv" ? "," : "\t"
+    delim_iniss   = input_issues_file[(end - 2):end] == "csv" ? "," : "\t"
+    delim_outiss  = output_issues_file[(end - 2):end] == "csv" ? "," : "\t"
     quotechar     = nothing  # In some files values are delimited and quoted. E.g., line = "\"v1\", \"v2\", ...".
-    CSV.write(data_outfile, init_outdata(tableschema, 0); delim=delim_outdata)  # Write column headers to disk
-    f = open(data_infile)
+    CSV.write(output_data_file, init_outdata(tableschema, 0); delim=delim_outdata)  # Write column headers to disk
+    f = open(input_data_file)
     for line in eachline(f)
         # Process column headers
         if !colnames_done
@@ -186,16 +188,16 @@ function diagnose_streaming_table(tableschema::TableSchema, data_infile::String,
             outdata[i_outdata, colname] = val
         end
 
-        # If outdata is full append it to data_outfile
+        # If outdata is full append it to output_data_file
         if i_outdata == n_outdata
-            CSV.write(data_outfile, outdata; append=true, delim=delim_outdata)
+            CSV.write(output_data_file, outdata; append=true, delim=delim_outdata)
             i_outdata = 0  # Reset the row number
             nr += n_outdata
         end
     end
     close(f)
     if i_outdata != 0
-        CSV.write(data_outfile, outdata[1:i_outdata, :]; append=true, delim=delim_outdata)
+        CSV.write(output_data_file, outdata[1:i_outdata, :]; append=true, delim=delim_outdata)
         nr += i_outdata
     end
 
@@ -205,8 +207,8 @@ function diagnose_streaming_table(tableschema::TableSchema, data_infile::String,
     # Format result
     issues_in  = construct_issues_table(issues_in,  tableschema, nr)
     issues_out = construct_issues_table(issues_out, tableschema, nr)
-    CSV.write(issuesin_file,  issues_in; delim=delim_iniss)
-    CSV.write(issuesout_file, issues_out; delim=delim_outiss)
+    CSV.write(input_issues_file,  issues_in;  delim=delim_iniss)
+    CSV.write(output_issues_file, issues_out; delim=delim_outiss)
 end
 
 

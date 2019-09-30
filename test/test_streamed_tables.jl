@@ -27,7 +27,7 @@ fever     = ColumnSchema(:fever,     "Had fever",   Bool,    CATEGORICAL, REQUIR
 ts        = TableSchema(:mytable, "My table", [patientid, age, dose, fever], [:patientid])
 
 # Compare data to schema
-diagnose(ts, data_infile, data_outfile, issues_infile, issues_outfile)
+compare(ts, data_infile; output_data_file=data_outfile, input_issues_file=issues_infile, output_issues_file=issues_outfile)
 issues_in = DataFrame(CSV.File(issues_infile; delim='\t'))
 @test size(issues_in, 1) == 0
 
@@ -35,7 +35,7 @@ issues_in = DataFrame(CSV.File(issues_infile; delim='\t'))
 age.validvalues = 0:120
 
 # Compare again
-diagnose(ts, data_infile, data_outfile, issues_infile, issues_outfile)
+compare(ts, data_infile; output_data_file=data_outfile, input_issues_file=issues_infile, output_issues_file=issues_outfile)
 outdata    = DataFrame(CSV.File(data_outfile))
 issues_in  = DataFrame(CSV.File(issues_infile; delim='\t'))
 issues_out = DataFrame(CSV.File(issues_outfile; delim='\t'))
@@ -47,7 +47,7 @@ issues_out = DataFrame(CSV.File(issues_outfile; delim='\t'))
 indata = DataFrame(CSV.File(data_infile))
 indata[4, :age] = 44
 CSV.write(data_infile, indata; delim=',')
-diagnose(ts, data_infile, data_outfile, issues_infile, issues_outfile)
+compare(ts, data_infile; output_data_file=data_outfile, input_issues_file=issues_infile, output_issues_file=issues_outfile)
 issues_in = DataFrame(CSV.File(issues_infile; delim='\t'))
 @test size(issues_in, 1) == 0
 
@@ -61,7 +61,7 @@ function test_row_constraints()
                   dob=Date.(["1992-10-01", "1988-03-23", "1983-11-18"]),
                   date_of_marriage=[Date("2015-09-13"), missing, Date("1981-11-01")])
     CSV.write(data_infile, indata; delim=',')
-    diagnose(schema.tables[:dates], data_infile, data_outfile, issues_infile, issues_outfile)
+    compare(schema.tables[:dates], data_infile; output_data_file=data_outfile, input_issues_file=issues_infile, output_issues_file=issues_outfile)
 end
 test_row_constraints()
 issues_in = DataFrame(CSV.File(issues_infile))
