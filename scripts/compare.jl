@@ -11,6 +11,7 @@ using Pkg
 Pkg.activate(".")
 
 using CSV
+using Dates
 using DataFrames
 using Schemata
 
@@ -34,8 +35,9 @@ else
 end
 
 # Compare data to schema
-compare(ts, input_data_file)
-
-# Inform the user
-println("A transformed table has been stored at $(data_outfile).")
-println("A table of remaining issues has been stored at $(issues_outfile).")
+output_data_file, input_issues_file, output_issues_file = Schemata.compare_data_to_schema.set_output_files(input_data_file, "", "", "")
+println("$(now()) Starting comparison.")
+compare(ts, input_data_file; output_data_file=output_data_file, input_issues_file=input_issues_file, output_issues_file=output_issues_file)
+println("$(now()) A transformed table has been stored at $(output_data_file).")
+println("$(now()) A table of issues with the input data has been stored at $(input_issues_file).")
+println("$(now()) A table of issues with the output data has been stored at $(output_issues_file).")

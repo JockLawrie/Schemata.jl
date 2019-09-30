@@ -106,18 +106,7 @@ end
 
 function compare_streaming_table(tableschema::TableSchema, input_data_file::String; output_data_file::String="", input_issues_file::String="", output_issues_file::String="")
     # Set output files
-    if output_data_file == ""
-        fname, ext = splitext(input_data_file)
-        output_data_file = "$(fname)_transformed.tsv"
-    end
-    if input_issues_file == ""
-        fname, ext = splitext(input_data_file)
-        input_issues_file = "$(fname)_input_issues.tsv"
-    end
-    if output_issues_file == ""
-        fname, ext = splitext(input_data_file)
-        output_issues_file = "$(fname)_output_issues.tsv"
-    end
+    output_data_file, input_issues_file, output_issues_file = set_output_files(input_data_file, output_data_file, input_issues_file, output_issues_file)
     outdir  = dirname(output_data_file)  # outdir = "" means output_data_file is in the pwd()
     outdir != "" && !isdir(outdir) && error("The directory containing the specified output file does not exist.")
 
@@ -214,6 +203,14 @@ end
 
 ################################################################################
 # Non-API functions
+
+function set_output_files(input_data_file::String, output_data_file::String, input_issues_file::String, output_issues_file::String)
+    fname, ext = splitext(input_data_file)
+    output_data_file   = output_data_file   == "" ? "$(fname)_transformed.tsv"   : output_data_file
+    input_issues_file  = input_issues_file  == "" ? "$(fname)_input_issues.tsv"  : input_issues_file
+    output_issues_file = output_issues_file == "" ? "$(fname)_output_issues.tsv" : output_issues_file
+    output_data_file, input_issues_file, output_issues_file
+end
 
 function init_issues(tableschema::TableSchema)
     result = Dict(:primarykey_duplicates => 0, :intrarow_constraints => Dict{String, Int}(), :data_extra_cols => Symbol[], :data_missing_cols => Symbol[])
@@ -437,10 +434,10 @@ function construct_issues_table(issues, tableschema, ntotal)
     result    = NamedTuple{(:entity, :id, :issue), Tuple{String, String, String}}[]
     tablename = tableschema.name
     if !isempty(issues[:data_extra_cols])
-        push!(result, (entity="table", id=tablename, issue="The data has columns that the schema doesn't have ($(issues[:data_extra_cols]))."))
+        push!(result, (entity="table", id="$(tablename)", issue="The data has columns that the schema doesn't have ($(issues[:data_extra_cols]))."))
     end
     if !isempty(issues[:data_missing_cols])
-        push!(result, (entity="table", id=tablename, issue="The data is missing some columns that the Schema has ($(issues[:data_missing_cols]))."))
+        push!(result, (entity="table", id="$(tablename)", issue="The data is missing some columns that the Schema has ($(issues[:data_missing_cols]))."))
     end
     if issues[:primarykey_duplicates] > 0
         nd = issues[:primarykey_duplicates]
