@@ -442,11 +442,11 @@ function construct_issues_table(issues, tableschema, ntotal)
     if issues[:primarykey_duplicates] > 0
         nd = issues[:primarykey_duplicates]
         p  = make_pct_presentable(100.0 * nd / ntotal)
-        push!(result, (entity="table", id="$(tablename)", issue="$(p)% ($(nd)/$(ntotal)) rows contain duplicated values of the primary key."))
+        push!(result, (entity="table", id="$(tablename)", issue="$(p)% ($(nd)/$(ntotal)) of rows contain duplicated values of the primary key."))
     end
     for (constraint, nr) in issues[:intrarow_constraints]
         p = make_pct_presentable(100.0 * nr / ntotal)
-        msg = "$(p)% ($(nr)/$(ntotal)) rows don't satisfy the constraint: $(constraint)"
+        msg = "$(p)% ($(nr)/$(ntotal)) of rows don't satisfy the constraint: $(constraint)"
         push!(result, (entity="table", id="$(tablename)", issue=msg))
     end
     for (colname, colschema) in tableschema.colname2colschema
