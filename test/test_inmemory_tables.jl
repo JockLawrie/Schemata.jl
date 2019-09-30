@@ -52,7 +52,7 @@ schema.tables[:mytable].colname2colschema[:age].validvalues = 0:120
 # Compare again
 outdata, issues_in, issues_out = diagnose(tbl, schema.tables[:mytable])
 @test size(issues_in, 1)  == 1
-@test size(issues_out, 1) == 2
+@test size(issues_out, 1) == 1
 @test ismissing(outdata[4, :age]) == true
 
 # Fix data

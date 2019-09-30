@@ -12,7 +12,7 @@ using ..handle_validvalues
 using ..types
 
 ################################################################################
-# API functions
+# API function
 
 """
 Compares a table to a TableSchema and produces:
@@ -30,7 +30,8 @@ There are 2 methods for diagnosing a table:
 """
 diagnose(table, tableschema::TableSchema) = diagnose_inmemory_table(table, tableschema)
 
-diagnose(datafile::String, tableschema::TableSchema) = diagnose_streaming_table(datafile, tableschema, false, "")
+diagnose(datafile::String, tableschema::TableSchema) = diagnose_streaming_table(datafile, tableschema, "", "", "")
+diagnose(datafile::String, tableschema::TableSchema, data_outfile, issuesin_file, issuesout_file) = diagnose_streaming_table(datafile, tableschema, data_outfile, issuesin_file, issuesout_file) 
 
 ################################################################################
 # diagnose_inmemory_table!
@@ -42,8 +43,8 @@ function diagnose_inmemory_table(indata, tableschema::TableSchema)
     issues_in     = init_issues(tableschema)  # Issues for indata
     issues_out    = init_issues(tableschema)  # Issues for outdata
     colnames      = propertynames(indata)
-    primarykey    = fill("", length(tableschema.primarykey))  # Stringified primary key 
     pk_colnames   = tableschema.primarykey
+    primarykey    = fill("", length(pk_colnames))  # Stringified primary key
     pkvalues_in   = Set{String}()  # Values of the primary key
     pkvalues_out  = Set{String}()
     rowdict       = Dict{Symbol, Any}()
@@ -80,7 +81,6 @@ function diagnose_inmemory_table(indata, tableschema::TableSchema)
         for (colname, val) in rowdict
             ismissing(val) && continue
             !haskey(colname2colschema, colname) && continue
-            colschema = colname2colschema[colname]
             outdata[i_outdata, colname] = val
         end
     end
@@ -103,80 +103,111 @@ end
 ################################################################################
 # diagnose_streaming_table!
 
-function diagnose_streaming_table(infile::String, tableschema::TableSchema, enforce::Bool, outfile::String)
-    if enforce
-        outdir    = dirname(outfile)  # outdir = "" means outfile is in the pwd()
-        outdir   != "" && !isdir(outdir) && error("The directory containing the specified output file does not exist.")
-        outdata   = init_outdata(infile, tableschema)
-        n_outdata = size(outdata, 1)
-        CSV.write(outfile, init_outdata(tableschema, 0))  # Write column headers to disk
-    else
-        outdata   = nothing
-        n_outdata = 0
+function diagnose_streaming_table(data_infile::String, tableschema::TableSchema, data_outfile::String="", issuesin_file::String="", issuesout_file::String="")
+    # Set output files
+    if data_outfile == ""
+        fname, ext = splitext(data_infile)
+        data_outfile = "$(fname)_transformed.tsv"
     end
+    if issuesin_file == ""
+        fname, ext = splitext(data_infile)
+        issuesin_file = "$(fname)_input_issues.tsv"
+    end
+    if issuesout_file == ""
+        fname, ext = splitext(data_infile)
+        issuesout_file = "$(fname)_output_issues.tsv"
+    end
+    outdir  = dirname(data_outfile)  # outdir = "" means data_outfile is in the pwd()
+    outdir != "" && !isdir(outdir) && error("The directory containing the specified output file does not exist.")
+
+    # Init
     tablename     = tableschema.name
-    issues        = NamedTuple{(:entity, :id, :issue), Tuple{String, String, String}}[]
-    tableissues   = Dict(:primarykey_duplicates => 0, :intrarow_constraints => Dict{String, Int}())
-    columnissues  = Dict(colname => Dict(:n_notunique => 0, :n_missing => 0, :n_invalid => 0) for colname in keys(tableschema.colname2colschema))
+    outdata       = init_outdata(tableschema, data_infile)
+    issues_in     = init_issues(tableschema)  # Issues for indata
+    issues_out    = init_issues(tableschema)  # Issues for outdata
+    pk_colnames   = tableschema.primarykey
+    primarykey    = fill("", length(pk_colnames))  # Stringified primary key 
+    pkvalues_in   = Set{String}()  # Values of the primary key
+    pkvalues_out  = Set{String}()
+    rowdict       = Dict{Symbol, Any}()
+    i_outdata     = 0
+    nconstraints  = length(tableschema.intrarow_constraints)
+    colname2colschema = tableschema.colname2colschema
+    uniquevalues_in   = Dict(colname => Set{colschema.datatype}() for (colname, colschema) in colname2colschema if colschema.isunique==true)
+    uniquevalues_out  = Dict(colname => Set{colschema.datatype}() for (colname, colschema) in colname2colschema if colschema.isunique==true)
+
+    nr            = 0  # Total number of rows in the output data
+    n_outdata     = size(outdata, 1)
     colnames      = nothing
     colnames_done = false
-    pk_colnames   = tableschema.primarykey
-    primarykey    = fill("", length(pk_colnames))
-    pkvalues      = Set{String}()  # Values of the primary key
-    uniquevalues  = Dict(colname => Set{colschema.datatype}() for (colname, colschema) in tableschema.colname2colschema if colschema.isunique==true)
-    delim         = infile[(end - 2):end] == "csv" ? "," : "\t"
-    row           = Dict{Symbol, Any}()
-    nr            = 0  # Total number of rows in the table
-    i_data        = 0
-    nconstraints  = length(tableschema.intrarow_constraints)
+    delim_indata  = data_infile[(end - 2):end] == "csv" ? "," : "\t"
+    delim_outdata = data_outfile[(end - 2):end] == "csv" ? "," : "\t"
+    delim_iniss   = issuesin_file[(end - 2):end] == "csv" ? "," : "\t"
+    delim_outiss  = issuesout_file[(end - 2):end] == "csv" ? "," : "\t"
     quotechar     = nothing  # In some files values are delimited and quoted. E.g., line = "\"v1\", \"v2\", ...".
-    colname2colschema = tableschema.colname2colschema
-    f = open(infile)
+    CSV.write(data_outfile, init_outdata(tableschema, 0); delim=delim_outdata)  # Write column headers to disk
+    f = open(data_infile)
     for line in eachline(f)
+        # Process column headers
         if !colnames_done
-            r = String.(split(line, delim))
+            r = String.(split(line, delim_indata))
             c = Int(r[1][1])  # 1st character of 1st value
             if !(in(c, 48:57) || in(c, 65:90) || in(c, 97:122))
                 quotechar = string(r[1][1])
-                colnames  = [Symbol(colname) for colname in String.(strip.(split(line, delim), r[1][1]))]
+                colnames  = [Symbol(colname) for colname in String.(strip.(split(line, delim_indata), r[1][1]))]
             else
-                colnames = [Symbol(colname) for colname in String.(strip.(split(line, delim)))]
+                colnames = [Symbol(colname) for colname in String.(strip.(split(line, delim_indata)))]
             end
-            datacols_match_schemacols!(issues, tableschema, Set(colnames))
             colnames_done = true
             continue
         end
-        nr += 1
-        extract_row!(row, line, delim, colnames, quotechar)  # row = Dict(colname => String(value), ...)
+
+        # Assess input row
+        extract_row!(rowdict, line, delim_indata, colnames, quotechar)  # rowdict = Dict(colname => String(value), ...)
         if length(pk_colnames) > 1  # The uniqueness of 1-column primary keys is checked at the column level
-            populate_primarykey!(primarykey, pk_colnames, row)
-            primarykey_isunique!(tableissues, primarykey, pkvalues)
+            populate_primarykey!(primarykey, pk_colnames, rowdict)
+            primarykey_isunique!(issues_in, primarykey, pkvalues_in)
         end
-        parserow!(colname2colschema, row)  # row = Dict(colname => value, ...)
-        if enforce  # Write row to outdata
-            i_data += 1
-            for (colname, val) in row
-                ismissing(val) && continue
-                !haskey(colname2colschema, colname) && continue
-                colschema = colname2colschema[colname]
-                if !value_is_valid(val, colschema.validvalues)
-                    val = missing
-                    row[colname] = missing
-                end
-                outdata[i_data, colname] = val
-            end
-            if i_data == n_outdata
-                CSV.write(outfile, outdata; append=true)
-                i_data = 0  # Reset the row number
-            end
+        parserow!(colname2colschema, rowdict)
+        assess_row!(issues_in[:columnissues], rowdict, tableschema, uniquevalues_in, false)
+        nconstraints > 0 && test_intrarow_constraints!(issues_in[:intrarow_constraints], tableschema, rowdict)
+
+        # Assess output row
+        if length(pk_colnames) > 1
+            populate_primarykey!(primarykey, pk_colnames, rowdict)
+            primarykey_isunique!(issues_out, primarykey, pkvalues_out)
         end
-        assess_row!(columnissues, row, tableschema, uniquevalues)
-        nconstraints == 0 && continue
-        test_intrarow_constraints!(tableissues[:intrarow_constraints], tableschema, row)
+        assess_row!(issues_out[:columnissues], rowdict, tableschema, uniquevalues_out, true)
+        nconstraints > 0 && test_intrarow_constraints!(issues_out[:intrarow_constraints], tableschema, rowdict)
+
+        # Record output row
+        i_outdata += 1
+        for (colname, val) in rowdict
+            !haskey(colname2colschema, colname) && continue
+            outdata[i_outdata, colname] = val
+        end
+
+        # If outdata is full append it to data_outfile
+        if i_outdata == n_outdata
+            CSV.write(data_outfile, outdata; append=true, delim=delim_outdata)
+            i_outdata = 0  # Reset the row number
+            nr += n_outdata
+        end
     end
     close(f)
-    i_data != 0 && CSV.write(outfile, outdata[1:i_data, :]; append=true)
-    storeissues(issues, tableissues, columnissues, tablename, nr)
+    if i_outdata != 0
+        CSV.write(data_outfile, outdata[1:i_outdata, :]; append=true, delim=delim_outdata)
+        nr += i_outdata
+    end
+
+    # Column-level checks
+    datacols_match_schemacols!(issues_in, tableschema, Set(colnames))  # By construction this issue doesn't exist for outdata
+
+    # Format result
+    issues_in  = construct_issues_table(issues_in,  tableschema, nr)
+    issues_out = construct_issues_table(issues_out, tableschema, nr)
+    CSV.write(issuesin_file,  issues_in; delim=delim_iniss)
+    CSV.write(issuesout_file, issues_out; delim=delim_outiss)
 end
 
 
@@ -316,7 +347,7 @@ function assess_row!(columnissues, row, tableschema, uniquevalues, set_invalid_t
         val = getval(row, colname)
         val = diagnose_value!(columnissues[colname], val, colschema, uniquevalues, tablename, set_invalid_to_missing)
         if ismissing(val)
-            row[colname] = val
+            row[colname] = missing
         end
     end
 end
@@ -335,9 +366,10 @@ end
 function diagnose_value!(columnissues::Dict{Symbol, Int}, value, colschema::ColumnSchema, uniquevalues, tablename, set_invalid_to_missing)
     # Ensure valid values
     if !ismissing(value) && !value_is_valid(value, colschema.validvalues)
-        columnissues[:n_invalid] += 1
         if set_invalid_to_missing  # Only applied to outdata (not indata)
             value = missing
+        else
+            columnissues[:n_invalid] += 1
         end
     end
 
@@ -388,12 +420,12 @@ end
 Initialises outdata for streaming tables.
 Estimates the number of required rows using: filesize = bytes_per_row * nrows
 """
-function init_outdata(infile::String, tableschema::TableSchema)
+function init_outdata(tableschema::TableSchema, data_infile::String)
     bytes_per_row = 0
     for (colname, colschema) in tableschema.colname2colschema
         bytes_per_row += colschema.datatype == String ? 30 : 8  # Allow 30 bytes for Strings, 8 bytes for all other data types
     end
-    nr = Int(ceil(filesize(infile) / bytes_per_row))
+    nr = Int(ceil(filesize(data_infile) / bytes_per_row))
     init_outdata(tableschema, min(nr, 1_000_000))
 end
 
@@ -447,8 +479,9 @@ function store_column_issue!(issues, tablename, colname, num, ntotal, msg_suffix
 end
 
 function make_pct_presentable(p)
-    p > 1.0 && return "$(round(Int, p))"
-    p < 0.1 && return "<0.1"
+    p > 100.0 && return "100"
+    p > 1.0   && return "$(round(Int, p))"
+    p < 0.1   && return "<0.1"
     "$(round(p; digits=1))"
 end
 

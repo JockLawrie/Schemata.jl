@@ -1,8 +1,10 @@
 ################################################################################
 ### Construct table and write to disk
 
-infile  = "my_test_table_in.csv"
-outfile = "my_test_table_out.csv"
+data_infile    = "my_test_table_in.csv"
+data_outfile   = "my_test_table_out.csv"
+issues_infile  = "my_test_table_input_issues.tsv"
+issues_outfile = "my_test_table_output_issues.tsv"
 
 tbl = DataFrame(
     patientid = [1, 2, 3, 4],
@@ -11,7 +13,7 @@ tbl = DataFrame(
     fever     = [false, true, true, false]
 )
 
-CSV.write(infile, tbl; delim=',')
+CSV.write(data_infile, tbl; delim=',')
 tbl = nothing
 
 ################################################################################
@@ -25,28 +27,29 @@ fever     = ColumnSchema(:fever,     "Had fever",   Bool,    CATEGORICAL, REQUIR
 ts        = TableSchema(:mytable, "My table", [patientid, age, dose, fever], [:patientid])
 
 # Compare data to schema
-issues = diagnose(infile, ts)
-@test size(issues, 1) == 0
+diagnose(data_infile, ts, data_outfile, issues_infile, issues_outfile)
+issues_in = DataFrame(CSV.File(issues_infile; delim='\t'))
+@test size(issues_in, 1) == 0
 
 # Modify schema: Forbid the age column from having values of 120 or above
 age.validvalues = 0:120
 
 # Compare again
-issues = diagnose(infile, ts)
-@test size(issues, 1) == 1
-
-# Fix data: Attempt 2
-issues  = enforce_schema(infile, ts, outfile);
-outdata = DataFrame(CSV.File(outfile))
-@test size(issues, 1) == 1
+diagnose(data_infile, ts, data_outfile, issues_infile, issues_outfile)
+outdata    = DataFrame(CSV.File(data_outfile))
+issues_in  = DataFrame(CSV.File(issues_infile; delim='\t'))
+issues_out = DataFrame(CSV.File(issues_outfile; delim='\t'))
+@test size(issues_in, 1)  == 1
+@test size(issues_out, 1) == 1
 @test ismissing(outdata[4, :age]) == true
 
-# Fix data: Attempt 3
-indata = DataFrame(CSV.File(infile))
+# Fix input data
+indata = DataFrame(CSV.File(data_infile))
 indata[4, :age] = 44
-CSV.write(infile, indata; delim=',')
-issues = diagnose(infile, ts)
-@test size(issues, 1) == 0
+CSV.write(data_infile, indata; delim=',')
+diagnose(data_infile, ts, data_outfile, issues_infile, issues_outfile)
+issues_in = DataFrame(CSV.File(issues_infile; delim='\t'))
+@test size(issues_in, 1) == 0
 
 ################################################################################
 # Test intra-row constraints
@@ -57,14 +60,17 @@ function test_row_constraints()
                   patientid = UInt.([1,2,3]),
                   dob=Date.(["1992-10-01", "1988-03-23", "1983-11-18"]),
                   date_of_marriage=[Date("2015-09-13"), missing, Date("1981-11-01")])
-    CSV.write(infile, indata; delim=',')
-    issues = diagnose(infile, schema.tables[:dates])
+    CSV.write(data_infile, indata; delim=',')
+    diagnose(data_infile, schema.tables[:dates], data_outfile, issues_infile, issues_outfile)
 end
-issues = test_row_constraints()
-@test size(issues, 1) == 1
+test_row_constraints()
+issues_in = DataFrame(CSV.File(issues_infile))
+@test size(issues_in, 1) == 1
 
 ################################################################################
 # Clean up
 
-rm(infile)
-rm(outfile)
+rm(data_infile)
+rm(data_outfile)
+rm(issues_infile)
+rm(issues_outfile)
