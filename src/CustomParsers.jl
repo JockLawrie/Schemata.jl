@@ -15,10 +15,15 @@ import Base.parse
 using Parsers
 
 struct CustomParser
-    func::Function
+    func::Union{Function, DataType}  # Hack until Parsers.jl issue #38 is resolved and the solution released (then ensure func is a Function)
     args::Vector
     kwargs::Dict
     returntype::DataType
+
+    function CustomParser(func, args, kwargs, returntype)
+        func isa DataType && func != returntype && error("CustomParser: func is a DataType that doesn't equal returntype")
+        new(func, args, kwargs, returntype)
+    end
 end
 
 function CustomParser(d::Dict)

@@ -1,29 +1,29 @@
-constraints:
-  description: "Date constraints"
-  tables:
-    dates:
-      description: "Table with date constraints"
-      primarykey: patientid
-      intrarow_constraints: {birth date before marriage date: "r[:dob] < r[:date_of_marriage]"}
-      columns:
-      - patientid:
-          description: Patient ID
-          datatype: UInt
-          iscategorical: false
-          isrequired: true
-          isunique: true
-          validvalues: UInt
-      - dob:
-          description: Date of birth
-          datatype: Date
-          iscategorical: false
-          isrequired: true
-          isunique: false
-          validvalues: Date
-      - date_of_marriage:
-          description: Date of marriage 
-          datatype: Date
-          iscategorical: false
-          isrequired: false
-          isunique: false
-          validvalues: Date
+name: constraints
+description: "Date constraints"
+tables:
+  dates:
+    description: "Table with date constraints"
+    primarykey: patientid
+    intrarow_constraints: {birth date before marriage date: "r[:dob] < r[:date_of_marriage]"}
+    columns:
+    - patientid:
+        description: Patient ID
+        datatype: UInt
+        iscategorical: false
+        isrequired: true
+        isunique: true
+        validvalues: UInt
+    - dob:
+        description: Date of birth
+        datatype: Date
+        iscategorical: false
+        isrequired: true
+        isunique: false
+        validvalues: Date
+    - date_of_marriage:
+        description: Date of marriage
+        datatype: Date
+        iscategorical: false
+        isrequired: false
+        isunique: false
+        validvalues: Date
