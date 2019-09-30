@@ -33,37 +33,35 @@ tbl = DataFrame(
 )
 
 # Compare data to schema
-issues = diagnose(tbl, ts)
-@test size(issues, 1) == 4
+outdata, issues_in, issues_out = compare(ts, tbl)
+@test size(issues_in, 1) == 4
 
 # Modify data to comply with the schema
 categorical!(tbl, [:dose, :fever])  # Ensure :dose and :fever contain categorical data
-issues = diagnose(tbl, ts)
-@test size(issues, 1) == 2
+outdata, issues_in, issues_out = compare(ts, tbl)
+@test size(issues_in,  1) == 2
+@test size(issues_out, 1) == 0
 
 tbl[!, :patientid] = convert(Vector{UInt}, tbl[!, :patientid])
-issues = diagnose(tbl, ts)
-@test size(issues, 1) == 0
+outdata, issues_in, issues_out = compare(ts, tbl)
+@test size(issues_in, 1) == 0
 
 # Modify schema: Forbid tbl[:age] having values of 120 or above
 schema.tables[:mytable].colname2colschema[:age].validvalues = 0:120
 
 # Compare again
-issues = diagnose(tbl, schema.tables[:mytable])
-@test size(issues, 1) == 1
+outdata, issues_in, issues_out = compare(schema.tables[:mytable], tbl)
+@test size(issues_in, 1)  == 1
+@test size(issues_out, 1) == 1
+@test ismissing(outdata[4, :age]) == true
 
-# Fix data: Attempt 1
-tbl, issues = enforce_schema(tbl, schema.tables[:mytable]);
-@test size(issues, 1) == 1
-@test ismissing(tbl[4, :age]) == true
-
-# Fix data: Attempt 2
+# Fix data
 tbl[4, :age] = 44
-issues = diagnose(tbl, schema.tables[:mytable])
-@test size(issues, 1) == 0
+outdata, issues_in, issues_out = compare(schema.tables[:mytable], tbl)
+@test size(issues_in, 1) == 0
 
 # Add a new column to the schema
-zipcode = ColumnSchema(:zipcode, "Zip code", Int, CATEGORICAL, !REQUIRED, !UNIQUE, 10000:99999)
+zipcode = ColumnSchema(:zipcode, "Zip code", Int, !CATEGORICAL, !REQUIRED, !UNIQUE, 10000:99999)
 schema.tables[:mytable].colname2colschema[:zipcode] = zipcode
 push!(schema.tables[:mytable].columnorder, :zipcode)
 @test schema.tables[:mytable].columnorder[end] == :zipcode
@@ -78,24 +76,20 @@ push!(schema.tables[:mytable].columnorder, :zipcode)
 
 # Add a corresponding (non-compliant) column to the data
 tbl[!, :zipcode] = ["11111", "22222", "33333", "NULL"];  # CSV file was supplied with "NULL" values, forcing eltype to be String.
-issues = diagnose(tbl, schema.tables[:mytable])
-@test size(issues, 1) == 3
-
-# Fix the data
-tbl, issues = enforce_schema(tbl, schema.tables[:mytable]);
-@test size(issues, 1) == 0
+outdata, issues_in, issues_out = compare(schema.tables[:mytable], tbl)
+@test size(issues_in, 1)  == 2
+@test size(issues_out, 1) == 0
 
 # Add a new column to the schema
-dosedate = ColumnSchema(:date, "Dose date", Date, CATEGORICAL, !REQUIRED, !UNIQUE, Date)
+dosedate = ColumnSchema(:date, "Dose date", Date, !CATEGORICAL, !REQUIRED, !UNIQUE, Date)
 schema.tables[:mytable].colname2colschema[:date] = dosedate
 push!(schema.tables[:mytable].columnorder, :date)
 
 # Add a corresponding (compliant) column to the data
 tbl[!, :date] = ["2017-12-01", "2017-12-01", "2017-12-11", "2017-12-09"];
-issues = diagnose(tbl, schema.tables[:mytable])
-@test size(issues, 1) == 3
-tbl, issues = enforce_schema(tbl, schema.tables[:mytable]);
-@test size(issues, 1) == 0
+outdata, issues_in, issues_out = compare(schema.tables[:mytable], tbl)
+@test size(issues_in, 1)  == 4
+@test size(issues_out, 1) == 0
 
 ################################################################################
 # Test CustomParser
@@ -127,16 +121,16 @@ ts = TableSchema(:mytable, "My table", [cs], [:zdt])
 
 tbl = DataFrame(zdt=[DateTime(today() - Day(7)) + Hour(i) for i = 1:3])
 target = [ZonedDateTime(tbl[i, :zdt], TimeZone("Australia/Melbourne")) for i = 1:3]
-tbl, issues = enforce_schema(tbl, ts);
-@test tbl[!, :zdt] == target
+outdata, issues_in, issues_out = compare(ts, tbl);
+@test outdata[!, :zdt] == target
 
 tbl = DataFrame(zdt=[string(DateTime(today() - Day(7)) + Hour(i)) for i = 1:3])  # String type
-tbl, issues = enforce_schema(tbl, ts);
-@test tbl[!, :zdt] == target
+outdata, issues_in, issues_out = compare(ts, tbl);
+@test outdata[!, :zdt] == target
 
 tbl = DataFrame(zdt=[string(ZonedDateTime(DateTime(today() - Day(7)) + Hour(i), TimeZone("Australia/Melbourne"))) for i = 1:3])  # String type
-tbl, issues = enforce_schema(tbl, ts);
-@test tbl[!, :zdt] == target
+outdata, issues_in, issues_out = compare(ts, tbl);
+@test outdata[!, :zdt] == target
 
 ################################################################################
 # Test intra-row constraints
@@ -148,7 +142,7 @@ function test_row_constraints()
                   dob=Date.(["1992-10-01", "1988-03-23", "1983-11-18"]),
                   date_of_marriage=[Date("2015-09-13"), missing, Date("1981-11-01")]
                  )
-    issues = diagnose(d, schema.tables[:dates])
+    compare(schema.tables[:dates], d)
 end
-issues = test_row_constraints()
-@test size(issues, 1) == 1
+outdata, issues_in, issues_out = test_row_constraints()
+@test size(issues_in, 1) == 1

@@ -15,8 +15,8 @@ get_datatype(validvalues::T) where {T <: AbstractRange} = typeof(validvalues[1])
 
 "Returns: True if value is in validvalues"
 value_is_valid(value, validvalues::DataType) = typeof(value) == validvalues
-value_is_valid(value, validvalues) = in(value, validvalues)
-value_is_valid(value::T, validvalues) where {T <: CategoricalValue} = in(get(value), validvalues)
+value_is_valid(value, validvalues) = typeof(value) == eltype(validvalues) && in(value, validvalues)
+value_is_valid(value::T, validvalues) where {T <: CategoricalValue} = value_is_valid(get(value), validvalues)
 
 
 """
