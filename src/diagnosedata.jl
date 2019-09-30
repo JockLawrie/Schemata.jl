@@ -238,7 +238,7 @@ function extract_row!(row::Dict{Symbol, Any}, line::String, delim::String, colna
         i_start = r[1] + 1
         r       = findnext(quotechar, line, i_start)
         i_end   = r[1] - 1
-        row[colnames[j]] = strip(String(line[i_start:i_end]))
+        row[colnames[j]] = String(strip(line[i_start:i_end]))
         i_start = r[1] + 1
         i_start > linelength && break
     end

@@ -40,7 +40,7 @@ data_outfile = joinpath(dirname(datafile), "$(bname)_transformed$(ext)")
 issues = enforce_schema(datafile, ts, data_outfile)
 
 # Write output to disk
-issues_outfile = joinpath(dirname(datafile), "$(bname)_issues.tsv")
+issues_outfile = joinpath(dirname(datafile), "$(bname)_remaining_issues.tsv")
 CSV.write(issues_outfile, issues; delim='\t')
 
 # Inform the user
