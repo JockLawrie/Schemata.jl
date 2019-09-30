@@ -1,12 +1,11 @@
 #=
   Run this script as follows:
   $ cd /path/to/Schemata.jl
-  $ /path/to/julia scripts/diagnosetable.jl /path/to/config.yaml /path/to/data {tablename}
+  $ /path/to/julia scripts/compare.jl /path/to/config.yaml /path/to/inputdata
 =#
 
-configfile = ARGS[1]
-datafile   = ARGS[2]
-tablename  = length(ARGS) == 3 ? ARGS[3] : nothing
+configfile      = ARGS[1]
+input_data_file = ARGS[2]
 
 using Pkg
 Pkg.activate(".")
@@ -34,13 +33,9 @@ else
     error("The schema is neither a Schema or a TableSchema.")
 end
 
-# Diagnose
-issues = diagnose(datafile, ts)
-
-# Write output to disk
-bname, ext     = splitext(basename(datafile))
-issues_outfile = joinpath(dirname(datafile), "$(bname)_issues.tsv")
-CSV.write(issues_outfile, issues; delim='\t')
+# Compare data to schema
+compare(ts, input_data_file)
 
 # Inform the user
-println("A table of issues has been stored at $(issues_outfile).")
+println("A transformed table has been stored at $(data_outfile).")
+println("A table of remaining issues has been stored at $(issues_outfile).")

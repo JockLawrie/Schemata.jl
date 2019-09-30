@@ -107,15 +107,15 @@ end
 function compare_streaming_table(tableschema::TableSchema, input_data_file::String; output_data_file::String="", input_issues_file::String="", output_issues_file::String="")
     # Set output files
     if output_data_file == ""
-        fname, ext = splitext(data_infile)
+        fname, ext = splitext(input_data_file)
         output_data_file = "$(fname)_transformed.tsv"
     end
     if input_issues_file == ""
-        fname, ext = splitext(data_infile)
+        fname, ext = splitext(input_data_file)
         input_issues_file = "$(fname)_input_issues.tsv"
     end
     if output_issues_file == ""
-        fname, ext = splitext(data_infile)
+        fname, ext = splitext(input_data_file)
         output_issues_file = "$(fname)_output_issues.tsv"
     end
     outdir  = dirname(output_data_file)  # outdir = "" means output_data_file is in the pwd()
@@ -421,12 +421,12 @@ end
 Initialises outdata for streaming tables.
 Estimates the number of required rows using: filesize = bytes_per_row * nrows
 """
-function init_outdata(tableschema::TableSchema, data_infile::String)
+function init_outdata(tableschema::TableSchema, input_data_file::String)
     bytes_per_row = 0
     for (colname, colschema) in tableschema.colname2colschema
         bytes_per_row += colschema.datatype == String ? 30 : 8  # Allow 30 bytes for Strings, 8 bytes for all other data types
     end
-    nr = Int(ceil(filesize(data_infile) / bytes_per_row))
+    nr = Int(ceil(filesize(input_data_file) / bytes_per_row))
     init_outdata(tableschema, min(nr, 1_000_000))
 end
 
