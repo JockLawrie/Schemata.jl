@@ -11,6 +11,11 @@ using ..CustomParsers
 using ..handle_validvalues
 using ..types
 
+
+import Base.getindex
+getindex(r::CSV.Row2, nm::Symbol) = getproperty(r, nm)
+getindex(cr::Tables.ColumnsRow, nm::Symbol) = getproperty(cr, nm)
+
 ################################################################################
 # API function
 
@@ -43,7 +48,6 @@ function compare_inmemory_table(tableschema::TableSchema, indata)
     outdata       = init_outdata(tableschema, size(indata, 1))
     issues_in     = init_issues(tableschema)  # Issues for indata
     issues_out    = init_issues(tableschema)  # Issues for outdata
-    colnames      = propertynames(indata)
     pk_colnames   = tableschema.primarykey
     primarykey    = fill("", length(pk_colnames))  # Stringified primary key
     pkvalues_in   = Set{String}()  # Values of the primary key
@@ -58,29 +62,25 @@ function compare_inmemory_table(tableschema::TableSchema, indata)
     # Row-level checks
     for row in Tables.rows(indata)
         # Assess input row
-        for colname in propertynames(row)
-            rowdict[colname] = getproperty(row, colname)
-        end
         if length(pk_colnames) > 1  # The uniqueness of 1-column primary keys is checked at the column level
             populate_primarykey!(primarykey, pk_colnames, row)
             primarykey_isunique!(issues_in, primarykey, pkvalues_in)
         end
-        assess_row!(issues_in[:columnissues], rowdict, tableschema, uniquevalues_in, false)
-        nconstraints > 0 && test_intrarow_constraints!(issues_in[:intrarow_constraints], tableschema, rowdict)
+        assess_row_nomutate!(issues_in[:columnissues], row, colname2colschema, uniquevalues_in)
+        nconstraints > 0 && test_intrarow_constraints!(issues_in[:intrarow_constraints], tableschema, row)
 
         # Assess output row
-        parserow!(colname2colschema, rowdict)  # Transform rowdict according to the ColumnSchema
+        parserow!(rowdict, colname2colschema, row)  # Parse row into rowdict according to ColumnSchema
         if length(pk_colnames) > 1
-            populate_primarykey!(primarykey, pk_colnames, row)
+            populate_primarykey!(primarykey, pk_colnames, rowdict)
             primarykey_isunique!(issues_out, primarykey, pkvalues_out)
         end
-        assess_row!(issues_out[:columnissues], rowdict, tableschema, uniquevalues_out, true)
+        assess_row_mutate!(issues_out[:columnissues], rowdict, colname2colschema, uniquevalues_out)
         nconstraints > 0 && test_intrarow_constraints!(issues_out[:intrarow_constraints], tableschema, rowdict)
 
         # Record output row
         i_outdata += 1
         for (colname, val) in rowdict
-            ismissing(val) && continue
             !haskey(colname2colschema, colname) && continue
             outdata[i_outdata, colname] = val
         end
@@ -91,7 +91,7 @@ function compare_inmemory_table(tableschema::TableSchema, indata)
         !colschema.iscategorical && continue
         categorical!(outdata, colname)
     end
-    datacols_match_schemacols!(issues_in, tableschema, Set(colnames))  # By construction this issue doesn't exist for outdata
+    datacols_match_schemacols!(issues_in, tableschema, Set(propertynames(indata)))  # By construction this issue doesn't exist for outdata
     compare_datatypes!(issues_in,  indata,  colname2colschema)
     compare_datatypes!(issues_out, outdata, colname2colschema)
 
@@ -128,38 +128,20 @@ function compare_streaming_table(tableschema::TableSchema, input_data_file::Stri
 
     nr            = 0  # Total number of rows in the output data
     n_outdata     = size(outdata, 1)
-    colnames      = nothing
-    colnames_done = false
-    delim_indata  = input_data_file[(end - 2):end] == "csv" ? "," : "\t"
     delim_outdata = output_data_file[(end - 2):end] == "csv" ? "," : "\t"
     delim_iniss   = input_issues_file[(end - 2):end] == "csv" ? "," : "\t"
     delim_outiss  = output_issues_file[(end - 2):end] == "csv" ? "," : "\t"
     quotechar     = nothing  # In some files values are delimited and quoted. E.g., line = "\"v1\", \"v2\", ...".
     CSV.write(output_data_file, init_outdata(tableschema, 0); delim=delim_outdata)  # Write column headers to disk
-    f = open(input_data_file)
-    for line in eachline(f)
-        # Process column headers
-        if !colnames_done
-            r = String.(split(line, delim_indata))
-            c = Int(r[1][1])  # 1st character of 1st value
-            if !(in(c, 48:57) || in(c, 65:90) || in(c, 97:122))
-                quotechar = string(r[1][1])
-                colnames  = [Symbol(colname) for colname in String.(strip.(split(line, delim_indata), r[1][1]))]
-            else
-                colnames = [Symbol(colname) for colname in String.(strip.(split(line, delim_indata)))]
-            end
-            colnames_done = true
-            continue
-        end
-
+    csvrows = CSV.Rows(input_data_file; reusebuffer=true)
+    for row in csvrows
         # Assess input row
-        extract_row!(rowdict, line, delim_indata, colnames, quotechar)  # rowdict = Dict(colname => String(value), ...)
         if length(pk_colnames) > 1  # The uniqueness of 1-column primary keys is checked at the column level
-            populate_primarykey!(primarykey, pk_colnames, rowdict)
+            populate_primarykey!(primarykey, pk_colnames, row)
             primarykey_isunique!(issues_in, primarykey, pkvalues_in)
         end
-        parserow!(colname2colschema, rowdict)
-        assess_row!(issues_in[:columnissues], rowdict, tableschema, uniquevalues_in, false)
+        parserow!(rowdict, colname2colschema, row)  # Parse row into rowdict according to ColumnSchema
+        assess_row_nomutate!(issues_in[:columnissues], rowdict, colname2colschema, uniquevalues_in)
         nconstraints > 0 && test_intrarow_constraints!(issues_in[:intrarow_constraints], tableschema, rowdict)
 
         # Assess output row
@@ -167,7 +149,7 @@ function compare_streaming_table(tableschema::TableSchema, input_data_file::Stri
             populate_primarykey!(primarykey, pk_colnames, rowdict)
             primarykey_isunique!(issues_out, primarykey, pkvalues_out)
         end
-        assess_row!(issues_out[:columnissues], rowdict, tableschema, uniquevalues_out, true)
+        assess_row_mutate!(issues_out[:columnissues], rowdict, colname2colschema, uniquevalues_out)
         nconstraints > 0 && test_intrarow_constraints!(issues_out[:intrarow_constraints], tableschema, rowdict)
 
         # Record output row
@@ -184,14 +166,13 @@ function compare_streaming_table(tableschema::TableSchema, input_data_file::Stri
             nr += n_outdata
         end
     end
-    close(f)
     if i_outdata != 0
         CSV.write(output_data_file, outdata[1:i_outdata, :]; append=true, delim=delim_outdata)
         nr += i_outdata
     end
 
     # Column-level checks
-    datacols_match_schemacols!(issues_in, tableschema, Set(colnames))  # By construction this issue doesn't exist for outdata
+    datacols_match_schemacols!(issues_in, tableschema, Set(csvrows.names))  # By construction this issue doesn't exist for outdata
 
     # Format result
     issues_in  = construct_issues_table(issues_in,  tableschema, nr)
@@ -257,40 +238,6 @@ function compare_datatypes!(issues, table, colname2colschema)
     end
 end
 
-"Values are separated by delim."
-function extract_row!(row::Dict{Symbol, Any}, line::String, delim::String, colnames::Vector{Symbol}, quotechar::Nothing)
-    i_start = 1
-    ncols   = length(colnames)
-    for j = 1:ncols
-        r = findnext(delim, line, i_start)  # r = i:i, where line[i] == delim
-        if isnothing(r)  # If r is nothing then we're in the last column
-            row[colnames[j]] = String(strip(line[i_start:end]))
-            break
-        else
-            i_end = r[1] - 1
-            row[colnames[j]] = String(strip(line[i_start:i_end]))
-            i_start = i_end + 2
-        end
-    end
-end
-
-"Values are separated by delim and quoted by quotechar."
-function extract_row!(row::Dict{Symbol, Any}, line::String, delim::String, colnames::Vector{Symbol}, quotechar::String)
-    i_start    = 1
-    ncols      = length(colnames)
-    linelength = length(line)
-    for j = 1:ncols
-        r = findnext(quotechar, line, i_start)  # r = i:i, where line[i] == stripchar
-        isnothing(r) && break
-        i_start = r[1] + 1
-        r       = findnext(quotechar, line, i_start)
-        i_end   = r[1] - 1
-        row[colnames[j]] = String(strip(line[i_start:i_end]))
-        i_start = r[1] + 1
-        i_start > linelength && break
-    end
-end
-
 "Modified: primarykey"
 function populate_primarykey!(primarykey::Vector{String}, pk_colnames::Vector{Symbol}, row)
     j = 0
@@ -311,13 +258,13 @@ function primarykey_isunique!(issues, primarykey, pkvalues)
 end
 
 """
-Modified: row
+Modified: result
 
-Parse values from String to colschema.datatype
+Parse values from row to colschema.datatype
 """
-function parserow!(colname2colschema, row)
+function parserow!(result, colname2colschema, row)
     for (colname, colschema) in colname2colschema
-        row[colname] = parsevalue(colschema, row[colname])
+        result[colname] = parsevalue(colschema, getproperty(row, colname))
     end
 end
 
@@ -339,29 +286,32 @@ function parsevalue(colschema::ColumnSchema, value)
     end
 end
 
-function assess_row!(columnissues, row, tableschema, uniquevalues, set_invalid_to_missing::Bool)
-    tablename = tableschema.name
-    for (colname, colschema) in tableschema.colname2colschema
-        val = getval(row, colname)
-        val = diagnose_value!(columnissues[colname], val, colschema, uniquevalues, tablename, set_invalid_to_missing)
+function assess_row_nomutate!(columnissues, row, colname2colschema, uniquevalues)
+    for (colname, colschema) in colname2colschema
+        diagnose_value!(columnissues[colname], row[colname], colschema, uniquevalues, false)
+    end
+end
+
+function assess_row_mutate!(columnissues, row, colname2colschema, uniquevalues)
+    for (colname, colschema) in colname2colschema
+        val = diagnose_value!(columnissues[colname], row[colname], colschema, uniquevalues, true)
         if ismissing(val)
             row[colname] = missing
         end
     end
 end
 
-getval(row::Dict, colname::Symbol) = row[colname]
-getval(row,       colname::Symbol) = getproperty(row, colname)
-
-function diagnose_value!(columnissues::Dict{Symbol, Int}, value::T, colschema::ColumnSchema, uniquevalues, tablename, set_invalid_to_missing) where {T <: CategoricalValue} 
-    diagnose_value!(columnissues, get(value), colschema, uniquevalues, tablename, set_invalid_to_missing)
+function diagnose_value!(columnissues::Dict{Symbol, Int}, value::T, colschema::ColumnSchema,
+                         uniquevalues, set_invalid_to_missing) where {T <: CategoricalValue} 
+    diagnose_value!(columnissues, get(value), colschema, uniquevalues, set_invalid_to_missing)
 end
 
-function diagnose_value!(columnissues::Dict{Symbol, Int}, value::T, colschema::ColumnSchema, uniquevalues, tablename, set_invalid_to_missing) where {T <: CategoricalString} 
-    diagnose_value!(columnissues, get(value), colschema, uniquevalues, tablename, set_invalid_to_missing)
+function diagnose_value!(columnissues::Dict{Symbol, Int}, value::T, colschema::ColumnSchema,
+                         uniquevalues, set_invalid_to_missing) where {T <: CategoricalString} 
+    diagnose_value!(columnissues, get(value), colschema, uniquevalues, set_invalid_to_missing)
 end
 
-function diagnose_value!(columnissues::Dict{Symbol, Int}, value, colschema::ColumnSchema, uniquevalues, tablename, set_invalid_to_missing)
+function diagnose_value!(columnissues::Dict{Symbol, Int}, value, colschema::ColumnSchema, uniquevalues, set_invalid_to_missing)
     # Ensure valid values
     if !ismissing(value) && !value_is_valid(value, colschema.validvalues)
         if set_invalid_to_missing  # Only applied to outdata (not indata)
@@ -391,7 +341,7 @@ end
 Modified: constraint_issues.
 - row is a property accessible object: val = getproperty(row, colname)
 """
-function test_intrarow_constraints!(constraint_issues::Dict{String, Int}, tableschema::TableSchema, row::Dict{Symbol, Any})
+function test_intrarow_constraints!(constraint_issues::Dict{String, Int}, tableschema::TableSchema, row)
     for (msg, f) in tableschema.intrarow_constraints
         ok = @eval $f($row)        # Hack to avoid world age problem.
         ismissing(ok) && continue  # This case is picked up at the column level
