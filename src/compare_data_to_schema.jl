@@ -146,15 +146,17 @@ function compare_streaming_table(tableschema::TableSchema, input_data_file::Stri
         assess_row!(colissues_in, rowdict, colname2colschema, uniquevalues_in)
         nconstraints > 0 && test_intrarow_constraints!(issues_in[:intrarow_constraints], tableschema, rowdict)
 
-        # Assess output row
+        # Assess output row and record output row (combine the 2 tasks to avoid a loop over the columns)
         if length(pk_colnames) > 1
             populate_primarykey!(primarykey, pk_colnames, rowdict)
             primarykey_isunique!(issues_out, primarykey, pkvalues_out)
         end
+        i_outdata += 1
         for (colname, colschema) in colname2colschema  # For speed, avoid testing value_is_valid directly. Instead reuse assessment of input.
             val = rowdict[colname]
             ci  = colissues_out[colname]
             if colissues_in[colname][:n_invalid] == ci[:n_invalid]  # input value (=output value) is valid
+                @inbounds outdata[i_outdata, colname] = val
                 if ismissing(val)
                     if colschema.isrequired
                         ci[:n_missing] += 1
@@ -169,6 +171,7 @@ function compare_streaming_table(tableschema::TableSchema, input_data_file::Stri
                     end
                 end
             else  # input value (=output value) is invalid...set to missing (report output value as missing, not as invalid)
+                @inbounds outdata[i_outdata, colname] = missing
                 rowdict[colname] = missing
                 if colschema.isrequired
                     ci[:n_missing] += 1
@@ -177,22 +180,14 @@ function compare_streaming_table(tableschema::TableSchema, input_data_file::Stri
         end
         nconstraints > 0 && test_intrarow_constraints!(issues_out[:intrarow_constraints], tableschema, rowdict)
 
-        # Record output row
-        i_outdata += 1
-        for (colname, val) in rowdict
-            !haskey(colname2colschema, colname) && continue
-            @inbounds outdata[i_outdata, colname] = val
-        end
-
         # If outdata is full append it to output_data_file
-        if i_outdata == n_outdata
-            CSV.write(output_data_file, outdata; append=true, delim=delim_outdata)
-            i_outdata = 0  # Reset the row number
-            nr += n_outdata
-        end
+        i_outdata != n_outdata && continue
+        CSV.write(output_data_file, outdata; append=true, delim=delim_outdata)
+        i_outdata = 0  # Reset the row number
+        nr += n_outdata
     end
     if i_outdata != 0
-        CSV.write(output_data_file, outdata[1:i_outdata, :]; append=true, delim=delim_outdata)
+        CSV.write(output_data_file, view(outdata, 1:i_outdata, :); append=true, delim=delim_outdata)
         nr += i_outdata
     end
 
