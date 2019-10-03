@@ -12,7 +12,9 @@ export CustomParser, parse
 
 import Base.parse
 
+using Dates
 using Parsers
+
 
 struct CustomParser
     func::Union{Function, DataType}  # Hack until Parsers.jl issue #38 is resolved and the solution released (then ensure func is a Function)
@@ -22,6 +24,9 @@ struct CustomParser
 
     function CustomParser(func, args, kwargs, returntype)
         func isa DataType && func != returntype && error("CustomParser: func is a DataType that doesn't equal returntype")
+        if returntype == Date && length(args) == 1  # Hack: convert args = [dateformat::String] to args = [DateFormat(dateformat)]...parses faster
+            args = [DateFormat(args[1])]
+        end
         new(func, args, kwargs, returntype)
     end
 end

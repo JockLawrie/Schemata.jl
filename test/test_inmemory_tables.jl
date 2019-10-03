@@ -133,6 +133,21 @@ outdata, issues_in, issues_out = compare(ts, tbl);
 @test outdata[!, :zdt] == target
 
 ################################################################################
+# Test conversion of String arg to DateFormat when the datatype is Date.
+
+d = Dict("name"        => "dt",
+         "description" => "Test Date parser with a prebuilt DateFormat stored in args, rather than construct a DateFormat for each parsing",
+         "datatype"    => "Date", "iscategorical" => false, "isrequired" => true, "isunique" => true,
+         "validvalues" => "(01JAN2019, Day(1), 31DEC2019)",
+         "parser"      => Dict("function" => "Date", "args"=>["dduuuyyyy"]))
+
+cs  = ColumnSchema(d)
+ts  = TableSchema(:mytable, "My table", [cs], [:dt])
+tbl = DataFrame(dt=["02DEC2019", "03DEC2019", "04DEC2019"])
+outdata, issues_in, issues_out = compare(ts, tbl);
+@test outdata[!, :dt] == [Date(2019, 12, 1) + Day(i) for i = 1:3]
+
+################################################################################
 # Test intra-row constraints
 function test_row_constraints()
     filename = joinpath(dirname(pathof(Schemata)), "..", "test/schemata/row_constraints.yaml")
