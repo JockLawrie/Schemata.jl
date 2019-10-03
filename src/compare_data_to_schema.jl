@@ -66,7 +66,7 @@ function compare_inmemory_table(tableschema::TableSchema, indata)
             populate_primarykey!(primarykey, pk_colnames, row)
             primarykey_isunique!(issues_in, primarykey, pkvalues_in)
         end
-        assess_row_nomutate!(issues_in[:columnissues], row, colname2colschema, uniquevalues_in)
+        assess_row!(issues_in[:columnissues], row, colname2colschema, uniquevalues_in)
         nconstraints > 0 && test_intrarow_constraints!(issues_in[:intrarow_constraints], tableschema, row)
 
         # Assess output row
@@ -132,6 +132,8 @@ function compare_streaming_table(tableschema::TableSchema, input_data_file::Stri
     delim_iniss   = input_issues_file[(end - 2):end] == "csv" ? "," : "\t"
     delim_outiss  = output_issues_file[(end - 2):end] == "csv" ? "," : "\t"
     quotechar     = nothing  # In some files values are delimited and quoted. E.g., line = "\"v1\", \"v2\", ...".
+    colissues_in  = issues_in[:columnissues]
+    colissues_out = issues_out[:columnissues]
     CSV.write(output_data_file, init_outdata(tableschema, 0); delim=delim_outdata)  # Write column headers to disk
     csvrows = CSV.Rows(input_data_file; reusebuffer=true)
     for row in csvrows
@@ -141,7 +143,7 @@ function compare_streaming_table(tableschema::TableSchema, input_data_file::Stri
             primarykey_isunique!(issues_in, primarykey, pkvalues_in)
         end
         parserow!(rowdict, colname2colschema, row)  # Parse row into rowdict according to ColumnSchema
-        assess_row_nomutate!(issues_in[:columnissues], rowdict, colname2colschema, uniquevalues_in)
+        assess_row!(colissues_in, rowdict, colname2colschema, uniquevalues_in)
         nconstraints > 0 && test_intrarow_constraints!(issues_in[:intrarow_constraints], tableschema, rowdict)
 
         # Assess output row
@@ -149,7 +151,30 @@ function compare_streaming_table(tableschema::TableSchema, input_data_file::Stri
             populate_primarykey!(primarykey, pk_colnames, rowdict)
             primarykey_isunique!(issues_out, primarykey, pkvalues_out)
         end
-        assess_row_mutate!(issues_out[:columnissues], rowdict, colname2colschema, uniquevalues_out)
+        for (colname, colschema) in colname2colschema  # For speed, avoid testing value_is_valid directly. Instead reuse assessment of input.
+            val = rowdict[colname]
+            ci  = colissues_out[colname]
+            if colissues_in[colname][:n_invalid] == ci[:n_invalid]  # input value (=output value) is valid
+                if ismissing(val)
+                    if colschema.isrequired
+                        ci[:n_missing] += 1
+                    end
+                else
+                    if colschema.isunique
+                        if in(val, uniquevalues_out[colname])
+                            ci[:n_notunique] += 1
+                        else
+                            push!(uniquevalues_out[colname], val)
+                        end
+                    end
+                end
+            else  # input value (=output value) is invalid...set to missing (report output value as missing, not as invalid)
+                rowdict[colname] = missing
+                if colschema.isrequired
+                    ci[:n_missing] += 1
+                end
+            end
+        end
         nconstraints > 0 && test_intrarow_constraints!(issues_out[:intrarow_constraints], tableschema, rowdict)
 
         # Record output row
@@ -286,7 +311,7 @@ function parsevalue(colschema::ColumnSchema, value)
     end
 end
 
-function assess_row_nomutate!(columnissues, row, colname2colschema, uniquevalues)
+function assess_row!(columnissues, row, colname2colschema, uniquevalues)
     for (colname, colschema) in colname2colschema
         diagnose_value!(columnissues[colname], row[colname], colschema, uniquevalues, false)
     end
