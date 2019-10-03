@@ -156,7 +156,7 @@ function compare_streaming_table(tableschema::TableSchema, input_data_file::Stri
         i_outdata += 1
         for (colname, val) in rowdict
             !haskey(colname2colschema, colname) && continue
-            outdata[i_outdata, colname] = val
+            @inbounds outdata[i_outdata, colname] = val
         end
 
         # If outdata is full append it to output_data_file
