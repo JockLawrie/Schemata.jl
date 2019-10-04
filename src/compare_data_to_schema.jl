@@ -71,7 +71,7 @@ function compare_inmemory_table(tableschema::TableSchema, indata)
         # Assess output row
         i_outdata += 1
         outputrow  = outdata[i_outdata, :]
-        parserow!(outputrow, inputrow, colname2colschema)  # Parse row into outputrow according to ColumnSchema
+        parserow!(outputrow, inputrow, colname2colschema)  # Parse inputrow into outputrow according to ColumnSchema
         assess_row_mutate!(issues_out[:columnissues], outputrow, colname2colschema, uniquevalues_out)
         if length(pk_colnames) > 1
             populate_primarykey!(primarykey, pk_colnames, outputrow)
@@ -131,22 +131,26 @@ function compare_streaming_table(tableschema::TableSchema, input_data_file::Stri
     CSV.write(output_data_file, init_outdata(tableschema, 0); delim=delim_outdata)  # Write column headers to disk
     csvrows = CSV.Rows(input_data_file; reusebuffer=true)
     for inputrow in csvrows
+        # Parse inputrow into outputrow according to ColumnSchema
+        i_outdata += 1
+        outputrow  = outdata[i_outdata, :]
+        parserow!(outputrow, inputrow, colname2colschema)
+
         # Assess input row
         if length(pk_colnames) > 1  # The uniqueness of 1-column primary keys is checked at the column level
             populate_primarykey!(primarykey, pk_colnames, inputrow)
             primarykey_isunique!(issues_in, primarykey, pkvalues_in)
         end
-        i_outdata += 1
-        outputrow  = outdata[i_outdata, :]
-        parserow!(outputrow, inputrow, colname2colschema)  # Parse row into outputrow according to ColumnSchema
         assess_row!(colissues_in, outputrow, colname2colschema, uniquevalues_in)
         nconstraints > 0 && test_intrarow_constraints!(issues_in[:intrarow_constraints], tableschema, outputrow)
 
         # Assess output row
-        for (colname, colschema) in colname2colschema  # For speed, avoid testing value_is_valid directly. Instead reuse assessment of input.
+        # For speed, avoid testing value_is_valid directly. Instead reuse assessment of input.
+        # Testing intra-row constraints is unnecessary because either outputrow hasn't changed or the tests return early due to missingness
+        for (colname, colschema) in colname2colschema
             val = outputrow[colname]
             ci  = colissues_out[colname]
-            if colissues_in[colname][:n_invalid] == ci[:n_invalid]  # input value (=output value) is valid
+            if colissues_in[colname][:n_invalid] == ci[:n_invalid]  # input value (=output value) is valid...no change to outputrow
                 if ismissing(val)
                     if colschema.isrequired
                         ci[:n_missing] += 1
@@ -168,14 +172,13 @@ function compare_streaming_table(tableschema::TableSchema, input_data_file::Stri
             end
         end
         #= TODO:
-          This step is unnecessary if no pk values were set to missing (because they are invalid)
+          This step is unnecessary if no pk values were set to missing.
           In this case the pk check has already been done (on the input, which is the same as the output)
         =#
         if length(pk_colnames) > 1
             populate_primarykey!(primarykey, pk_colnames, outputrow)
             primarykey_isunique!(issues_out, primarykey, pkvalues_out)
         end
-        nconstraints > 0 && test_intrarow_constraints!(issues_out[:intrarow_constraints], tableschema, outputrow)
 
         # If outdata is full append it to output_data_file
         i_outdata != n_outdata && continue
@@ -359,7 +362,7 @@ Modified: constraint_issues.
 """
 function test_intrarow_constraints!(constraint_issues::Dict{String, Int}, tableschema::TableSchema, row)
     for (msg, f) in tableschema.intrarow_constraints
-        ok = @eval $f($row)  #      Hack to avoid world age problem.
+        ok = @eval $f($row)        # Hack to avoid world age problem.
         ismissing(ok) && continue  # This case is picked up at the column level
         ok && continue
         if haskey(constraint_issues, msg)
