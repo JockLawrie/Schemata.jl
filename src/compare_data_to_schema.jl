@@ -11,10 +11,8 @@ using ..CustomParsers
 using ..handle_validvalues
 using ..types
 
-
 import Base.getindex
-getindex(r::CSV.Row2, nm::Symbol) = getproperty(r, nm)
-getindex(cr::Tables.ColumnsRow, nm::Symbol) = getproperty(cr, nm)
+getindex(cr::Tables.ColumnsRow, nm::Symbol) = getproperty(cr, nm)  # For testing intrarow constraints
 
 ################################################################################
 # API function
@@ -84,7 +82,7 @@ function compare_inmemory_table(tableschema::TableSchema, indata)
         nconstraints > 0 && test_intrarow_constraints!(issues_in[:intrarow_constraints], tableschema, inputrow)
 
         # Assess output row
-        assess_row_mutate!(issues_out[:columnissues], outputrow, colname2colschema, uniquevalues_out)
+        assess_row_set_invalid_to_missing!(issues_out[:columnissues], outputrow, colname2colschema, uniquevalues_out)
         if length(pk_colnames) > 1
             populate_primarykey!(primarykey, pk_colnames, outputrow)
             pkvalue = join(primarykey)
@@ -111,8 +109,7 @@ end
 ################################################################################
 # compare_ondisk_table
 
-function compare_ondisk_table(tableschema::TableSchema,
-                              input_data_file::String, output_data_file::String, input_issues_file::String, output_issues_file::String)
+function compare_ondisk_table(tableschema::TableSchema, input_data_file, output_data_file, input_issues_file, output_issues_file)
     # Init
     tablename     = tableschema.name
     outdata       = init_outdata(tableschema, input_data_file)
@@ -262,10 +259,8 @@ end
 
 "Modified: primarykey"
 function populate_primarykey!(primarykey::Vector{String}, pk_colnames::Vector{Symbol}, row)
-    j = 0
-    for colname in pk_colnames
-        j += 1
-        primarykey[j] = string(row[colname])
+    for (j, colname) in enumerate(pk_colnames)
+        @inbounds primarykey[j] = string(getproperty(row, colname))
     end
 end
 
@@ -307,55 +302,58 @@ function parsevalue(colschema::ColumnSchema, value)
     end
 end
 
-function assess_row!(columnissues, outputrow, colname2colschema, uniquevalues)
+"Records issues with the row but doesn't mutate the row."
+function assess_row!(columnissues, row, colname2colschema, uniquevalues)
     for (colname, colschema) in colname2colschema
-        diagnose_value!(columnissues[colname], outputrow[colname], colschema, uniquevalues, false)
-    end
-end
-
-function assess_row_mutate!(columnissues, outputrow, colname2colschema, uniquevalues)
-    for (colname, colschema) in colname2colschema
-        val = diagnose_value!(columnissues[colname], outputrow[colname], colschema, uniquevalues, true)
+        val = getproperty(row, colname)
         if ismissing(val)
-            outputrow[colname] = missing
-        end
-    end
-end
-
-function diagnose_value!(columnissues::Dict{Symbol, Int}, value::T, colschema::ColumnSchema,
-                         uniquevalues, set_invalid_to_missing) where {T <: CategoricalValue} 
-    diagnose_value!(columnissues, get(value), colschema, uniquevalues, set_invalid_to_missing)
-end
-
-function diagnose_value!(columnissues::Dict{Symbol, Int}, value::T, colschema::ColumnSchema,
-                         uniquevalues, set_invalid_to_missing) where {T <: CategoricalString} 
-    diagnose_value!(columnissues, get(value), colschema, uniquevalues, set_invalid_to_missing)
-end
-
-function diagnose_value!(columnissues::Dict{Symbol, Int}, value, colschema::ColumnSchema, uniquevalues, set_invalid_to_missing)
-    # Ensure valid values
-    if !ismissing(value) && !value_is_valid(value, colschema.validvalues)
-        if set_invalid_to_missing  # Only applied to outdata (not indata)
-            value = missing
+            assess_missing_value!(columnissues[colname], colschema)
+        elseif value_is_valid(val, colschema.validvalues)
+            assess_nonmissing_value!(columnissues[colname], val, colschema, uniquevalues)
         else
-            columnissues[:n_invalid] += 1
+            columnissues[colname][:n_invalid] += 1
+            assess_nonmissing_value!(columnissues[colname], val, colschema, uniquevalues)
         end
     end
+end
 
-    # Ensure no missing data
-    if colschema.isrequired && ismissing(value)
+"Sets invalid values to missing."
+function assess_row_set_invalid_to_missing!(columnissues, outputrow, colname2colschema, uniquevalues)
+    for (colname, colschema) in colname2colschema
+        val = outputrow[colname]
+        if ismissing(val)
+            assess_missing_value!(columnissues[colname], colschema)
+        elseif value_is_valid(val, colschema.validvalues)
+            assess_nonmissing_value!(columnissues[colname], val, colschema, uniquevalues)
+        else
+            outputrow[colname] = missing
+            assess_missing_value!(columnissues[colname], colschema)
+        end
+    end
+end
+
+function assess_missing_value!(columnissues::Dict{Symbol, Int}, colschema::ColumnSchema)
+    if colschema.isrequired  # Ensure no missing data
         columnissues[:n_missing] += 1
     end
+end
 
-    # Ensure unique data
-    if colschema.isunique && !ismissing(value)
+function assess_nonmissing_value!(columnissues::Dict{Symbol, Int}, value, colschema::ColumnSchema, uniquevalues)
+    if colschema.isunique  # Ensure unique data
         if in(value, uniquevalues[colschema.name])
             columnissues[:n_notunique] += 1
         else
             push!(uniquevalues[colschema.name], value)
         end
     end
-    value
+end
+
+function assess_nonmissing_value!(columnissues::Dict{Symbol, Int}, value::T, colschema::ColumnSchema, uniquevalues) where {T <: CategoricalValue} 
+    assess_nonmissing_value!(columnissues, get(value), colschema, uniquevalues)
+end
+
+function assess_nonmissing_value!(columnissues::Dict{Symbol, Int}, value::T, colschema::ColumnSchema, uniquevalues) where {T <: CategoricalString} 
+    assess_nonmissing_value!(columnissues, get(value), colschema, uniquevalues)
 end
 
 """
