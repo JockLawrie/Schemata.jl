@@ -52,7 +52,6 @@ function compare_inmemory_table(tableschema::TableSchema, indata)
     primarykey    = fill("", length(pk_colnames))  # Stringified primary key
     pkvalues_in   = Set{String}()  # Values of the primary key
     pkvalues_out  = Set{String}()
-    rowdict       = Dict{Symbol, Any}()
     i_outdata     = 0
     nconstraints  = length(tableschema.intrarow_constraints)
     colname2colschema = tableschema.colname2colschema
@@ -60,30 +59,25 @@ function compare_inmemory_table(tableschema::TableSchema, indata)
     uniquevalues_out  = Dict(colname => Set{colschema.datatype}() for (colname, colschema) in colname2colschema if colschema.isunique==true)
 
     # Row-level checks
-    for row in Tables.rows(indata)
+    for inputrow in Tables.rows(indata)
         # Assess input row
         if length(pk_colnames) > 1  # The uniqueness of 1-column primary keys is checked at the column level
-            populate_primarykey!(primarykey, pk_colnames, row)
+            populate_primarykey!(primarykey, pk_colnames, inputrow)
             primarykey_isunique!(issues_in, primarykey, pkvalues_in)
         end
-        assess_row!(issues_in[:columnissues], row, colname2colschema, uniquevalues_in)
-        nconstraints > 0 && test_intrarow_constraints!(issues_in[:intrarow_constraints], tableschema, row)
+        assess_row!(issues_in[:columnissues], inputrow, colname2colschema, uniquevalues_in)
+        nconstraints > 0 && test_intrarow_constraints!(issues_in[:intrarow_constraints], tableschema, inputrow)
 
         # Assess output row
-        parserow!(rowdict, colname2colschema, row)  # Parse row into rowdict according to ColumnSchema
+        i_outdata += 1
+        outputrow  = outdata[i_outdata, :]
+        parserow!(outputrow, inputrow, colname2colschema)  # Parse row into outputrow according to ColumnSchema
+        assess_row_mutate!(issues_out[:columnissues], outputrow, colname2colschema, uniquevalues_out)
         if length(pk_colnames) > 1
-            populate_primarykey!(primarykey, pk_colnames, rowdict)
+            populate_primarykey!(primarykey, pk_colnames, outputrow)
             primarykey_isunique!(issues_out, primarykey, pkvalues_out)
         end
-        assess_row_mutate!(issues_out[:columnissues], rowdict, colname2colschema, uniquevalues_out)
-        nconstraints > 0 && test_intrarow_constraints!(issues_out[:intrarow_constraints], tableschema, rowdict)
-
-        # Record output row
-        i_outdata += 1
-        for (colname, val) in rowdict
-            !haskey(colname2colschema, colname) && continue
-            outdata[i_outdata, colname] = val
-        end
+        nconstraints > 0 && test_intrarow_constraints!(issues_out[:intrarow_constraints], tableschema, outputrow)
     end
 
     # Column-level checks
@@ -120,7 +114,6 @@ function compare_streaming_table(tableschema::TableSchema, input_data_file::Stri
     primarykey    = fill("", length(pk_colnames))  # Stringified primary key 
     pkvalues_in   = Set{String}()  # Values of the primary key
     pkvalues_out  = Set{String}()
-    rowdict       = Dict{Symbol, Any}()
     i_outdata     = 0
     nconstraints  = length(tableschema.intrarow_constraints)
     colname2colschema = tableschema.colname2colschema
@@ -137,23 +130,23 @@ function compare_streaming_table(tableschema::TableSchema, input_data_file::Stri
     colissues_out = issues_out[:columnissues]
     CSV.write(output_data_file, init_outdata(tableschema, 0); delim=delim_outdata)  # Write column headers to disk
     csvrows = CSV.Rows(input_data_file; reusebuffer=true)
-    for row in csvrows
+    for inputrow in csvrows
         # Assess input row
         if length(pk_colnames) > 1  # The uniqueness of 1-column primary keys is checked at the column level
-            populate_primarykey!(primarykey, pk_colnames, row)
+            populate_primarykey!(primarykey, pk_colnames, inputrow)
             primarykey_isunique!(issues_in, primarykey, pkvalues_in)
         end
-        parserow!(rowdict, colname2colschema, row)  # Parse row into rowdict according to ColumnSchema
-        assess_row!(colissues_in, rowdict, colname2colschema, uniquevalues_in)
-        nconstraints > 0 && test_intrarow_constraints!(issues_in[:intrarow_constraints], tableschema, rowdict)
-
-        # Assess output row and record output row (combine the 2 tasks to avoid a loop over the columns)
         i_outdata += 1
+        outputrow  = outdata[i_outdata, :]
+        parserow!(outputrow, inputrow, colname2colschema)  # Parse row into outputrow according to ColumnSchema
+        assess_row!(colissues_in, outputrow, colname2colschema, uniquevalues_in)
+        nconstraints > 0 && test_intrarow_constraints!(issues_in[:intrarow_constraints], tableschema, outputrow)
+
+        # Assess output row
         for (colname, colschema) in colname2colschema  # For speed, avoid testing value_is_valid directly. Instead reuse assessment of input.
-            val = rowdict[colname]
+            val = outputrow[colname]
             ci  = colissues_out[colname]
             if colissues_in[colname][:n_invalid] == ci[:n_invalid]  # input value (=output value) is valid
-                @inbounds outdata[i_outdata, colname] = val
                 if ismissing(val)
                     if colschema.isrequired
                         ci[:n_missing] += 1
@@ -168,8 +161,7 @@ function compare_streaming_table(tableschema::TableSchema, input_data_file::Stri
                     end
                 end
             else  # input value (=output value) is invalid...set to missing and report as missing, not as invalid
-                @inbounds outdata[i_outdata, colname] = missing
-                rowdict[colname] = missing
+                @inbounds outputrow[colname] = missing
                 if colschema.isrequired
                     ci[:n_missing] += 1
                 end
@@ -180,10 +172,10 @@ function compare_streaming_table(tableschema::TableSchema, input_data_file::Stri
           In this case the pk check has already been done (on the input, which is the same as the output)
         =#
         if length(pk_colnames) > 1
-            populate_primarykey!(primarykey, pk_colnames, rowdict)
+            populate_primarykey!(primarykey, pk_colnames, outputrow)
             primarykey_isunique!(issues_out, primarykey, pkvalues_out)
         end
-        nconstraints > 0 && test_intrarow_constraints!(issues_out[:intrarow_constraints], tableschema, rowdict)
+        nconstraints > 0 && test_intrarow_constraints!(issues_out[:intrarow_constraints], tableschema, outputrow)
 
         # If outdata is full append it to output_data_file
         i_outdata != n_outdata && continue
@@ -283,13 +275,13 @@ function primarykey_isunique!(issues, primarykey, pkvalues)
 end
 
 """
-Modified: result
+Modified: outputrow
 
-Parse values from row to colschema.datatype
+Parse inputrow into outputrow according to colschema.datatype
 """
-function parserow!(result, colname2colschema, row)
+function parserow!(outputrow, inputrow, colname2colschema)
     for (colname, colschema) in colname2colschema
-        result[colname] = parsevalue(colschema, getproperty(row, colname))
+        @inbounds outputrow[colname] = parsevalue(colschema, getproperty(inputrow, colname))
     end
 end
 
@@ -311,17 +303,17 @@ function parsevalue(colschema::ColumnSchema, value)
     end
 end
 
-function assess_row!(columnissues, row, colname2colschema, uniquevalues)
+function assess_row!(columnissues, outputrow, colname2colschema, uniquevalues)
     for (colname, colschema) in colname2colschema
-        diagnose_value!(columnissues[colname], row[colname], colschema, uniquevalues, false)
+        diagnose_value!(columnissues[colname], outputrow[colname], colschema, uniquevalues, false)
     end
 end
 
-function assess_row_mutate!(columnissues, row, colname2colschema, uniquevalues)
+function assess_row_mutate!(columnissues, outputrow, colname2colschema, uniquevalues)
     for (colname, colschema) in colname2colschema
-        val = diagnose_value!(columnissues[colname], row[colname], colschema, uniquevalues, true)
+        val = diagnose_value!(columnissues[colname], outputrow[colname], colschema, uniquevalues, true)
         if ismissing(val)
-            row[colname] = missing
+            outputrow[colname] = missing
         end
     end
 end
@@ -364,11 +356,10 @@ end
 
 """
 Modified: constraint_issues.
-- row is a property accessible object: val = getproperty(row, colname)
 """
 function test_intrarow_constraints!(constraint_issues::Dict{String, Int}, tableschema::TableSchema, row)
     for (msg, f) in tableschema.intrarow_constraints
-        ok = @eval $f($row)        # Hack to avoid world age problem.
+        ok = @eval $f($row)  #      Hack to avoid world age problem.
         ismissing(ok) && continue  # This case is picked up at the column level
         ok && continue
         if haskey(constraint_issues, msg)
