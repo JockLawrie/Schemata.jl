@@ -25,18 +25,27 @@ Compares a table to a TableSchema and produces:
 - A table of the ways in which the input table doesn't comply with the schema.
 - A table of the ways in which the output table doesn't comply with the schema.
 
-There are 2 methods for diagnosing a table:
+There are 2 methods for comparing a table to a schema:
 
-1. `compare(table, tableschema)` diagnoses an in-memory table.
+1. `compare(table, tableschema)` compares an in-memory table.
 
-2. `compare(tableschema, datafile::String)` diagnoses a table located at `datafile`.
+2. `compare(tableschema, input_data_file::String; output_data_file="", input_issues_file="", output_issues_file="")` compares a table stored on disk in `input_data_file`.
+
    This method is designed for tables that are too big for RAM.
-   It diagnoses a table one row at a time.
+   It examines one row at a time.
+   The 3 tables of results (see above) are stored on disk. By default they are stored in the same directory as the input table.
 """
 compare(tableschema::TableSchema, table) = compare_inmemory_table(tableschema, table)
 
 function compare(tableschema::TableSchema, input_data_file::String; output_data_file="", input_issues_file="", output_issues_file="")
-    compare_streaming_table(tableschema, input_data_file; output_data_file=output_data_file, input_issues_file=input_issues_file, output_issues_file=output_issues_file)
+    !isfile(input_data_file) && error("The input data file does not exist.")
+    fname, ext = splitext(input_data_file)
+    output_data_file   = output_data_file   == "" ? "$(fname)_transformed.tsv"   : output_data_file
+    input_issues_file  = input_issues_file  == "" ? "$(fname)_input_issues.tsv"  : input_issues_file
+    output_issues_file = output_issues_file == "" ? "$(fname)_output_issues.tsv" : output_issues_file
+    outdir  = dirname(output_data_file)  # outdir = "" means output_data_file is in the pwd()
+    outdir != "" && !isdir(outdir) && error("The directory containing the specified output file does not exist.")
+    compare_ondisk_table(tableschema, input_data_file, output_data_file, input_issues_file, output_issues_file)
 end
 
 ################################################################################
@@ -55,11 +64,16 @@ function compare_inmemory_table(tableschema::TableSchema, indata)
     i_outdata     = 0
     nconstraints  = length(tableschema.intrarow_constraints)
     colname2colschema = tableschema.colname2colschema
-    uniquevalues_in   = Dict(colname => Set{nonmissingtype(eltype(indata[!, colname]))}() for (colname, colschema) in colname2colschema if colschema.isunique==true)
+    uniquevalues_in   = Dict(colname => Set{nonmissingtype(eltype(getproperty(indata, colname)))}() for (colname, colschema) in colname2colschema if colschema.isunique==true)
     uniquevalues_out  = Dict(colname => Set{colschema.datatype}() for (colname, colschema) in colname2colschema if colschema.isunique==true)
 
     # Row-level checks
     for inputrow in Tables.rows(indata)
+        # Parse inputrow into outputrow according to ColumnSchema
+        i_outdata += 1
+        outputrow  = outdata[i_outdata, :]
+        parserow!(outputrow, inputrow, colname2colschema)
+
         # Assess input row
         if length(pk_colnames) > 1  # The uniqueness of 1-column primary keys is checked at the column level
             populate_primarykey!(primarykey, pk_colnames, inputrow)
@@ -70,9 +84,6 @@ function compare_inmemory_table(tableschema::TableSchema, indata)
         nconstraints > 0 && test_intrarow_constraints!(issues_in[:intrarow_constraints], tableschema, inputrow)
 
         # Assess output row
-        i_outdata += 1
-        outputrow  = outdata[i_outdata, :]
-        parserow!(outputrow, inputrow, colname2colschema)  # Parse inputrow into outputrow according to ColumnSchema
         assess_row_mutate!(issues_out[:columnissues], outputrow, colname2colschema, uniquevalues_out)
         if length(pk_colnames) > 1
             populate_primarykey!(primarykey, pk_colnames, outputrow)
@@ -98,15 +109,10 @@ function compare_inmemory_table(tableschema::TableSchema, indata)
 end
 
 ################################################################################
-# compare_streaming_table
+# compare_ondisk_table
 
-function compare_streaming_table(tableschema::TableSchema, input_data_file::String;
-                                 output_data_file::String="", input_issues_file::String="", output_issues_file::String="")
-    # Set output files
-    output_data_file, input_issues_file, output_issues_file = set_output_files(input_data_file, output_data_file, input_issues_file, output_issues_file)
-    outdir  = dirname(output_data_file)  # outdir = "" means output_data_file is in the pwd()
-    outdir != "" && !isdir(outdir) && error("The directory containing the specified output file does not exist.")
-
+function compare_ondisk_table(tableschema::TableSchema,
+                              input_data_file::String, output_data_file::String, input_issues_file::String, output_issues_file::String)
     # Init
     tablename     = tableschema.name
     outdata       = init_outdata(tableschema, input_data_file)
@@ -144,7 +150,7 @@ function compare_streaming_table(tableschema::TableSchema, input_data_file::Stri
             pkvalue = join(primarykey)
             primarykey_isunique!(issues_in, pkvalues_in, pkvalue)
         end
-        assess_row!(colissues_in, outputrow, colname2colschema, uniquevalues_in)
+        assess_row!(colissues_in, outputrow, colname2colschema, uniquevalues_in)  # Note: outputrow used because inputrow contains only Strings
         nconstraints > 0 && test_intrarow_constraints!(issues_in[:intrarow_constraints], tableschema, outputrow)
 
         # Assess output row
@@ -209,14 +215,6 @@ end
 ################################################################################
 # Non-API functions
 
-function set_output_files(input_data_file::String, output_data_file::String, input_issues_file::String, output_issues_file::String)
-    fname, ext = splitext(input_data_file)
-    output_data_file   = output_data_file   == "" ? "$(fname)_transformed.tsv"   : output_data_file
-    input_issues_file  = input_issues_file  == "" ? "$(fname)_input_issues.tsv"  : input_issues_file
-    output_issues_file = output_issues_file == "" ? "$(fname)_output_issues.tsv" : output_issues_file
-    output_data_file, input_issues_file, output_issues_file
-end
-
 function init_issues(tableschema::TableSchema)
     result = Dict(:primarykey_duplicates => 0, :intrarow_constraints => Dict{String, Int}(), :data_extra_cols => Symbol[], :data_missing_cols => Symbol[])
     result[:columnissues] = Dict{Symbol, Dict{Symbol, Int}}()
@@ -249,7 +247,7 @@ Checks whether each column and its schema are both categorical or both not categ
 function compare_datatypes!(issues, table, colname2colschema)
     for (colname, colschema) in colname2colschema
         coldata    = getproperty(table, colname)
-        data_eltyp = colschema.iscategorical ? eltype(levels(coldata)) : Core.Compiler.typesubtract(eltype(coldata), Missing)
+        data_eltyp = colschema.iscategorical ? eltype(levels(coldata)) : nonmissingtype(eltype(coldata))
         if data_eltyp != colschema.datatype  # Check data type matches that specified in the ColumnSchema
             issues[:columnissues][colname][:different_datatypes] = 1
         end
