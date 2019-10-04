@@ -63,7 +63,8 @@ function compare_inmemory_table(tableschema::TableSchema, indata)
         # Assess input row
         if length(pk_colnames) > 1  # The uniqueness of 1-column primary keys is checked at the column level
             populate_primarykey!(primarykey, pk_colnames, inputrow)
-            primarykey_isunique!(issues_in, primarykey, pkvalues_in)
+            pkvalue = join(primarykey)
+            primarykey_isunique!(issues_in, pkvalues_in, pkvalue)
         end
         assess_row!(issues_in[:columnissues], inputrow, colname2colschema, uniquevalues_in)
         nconstraints > 0 && test_intrarow_constraints!(issues_in[:intrarow_constraints], tableschema, inputrow)
@@ -75,7 +76,8 @@ function compare_inmemory_table(tableschema::TableSchema, indata)
         assess_row_mutate!(issues_out[:columnissues], outputrow, colname2colschema, uniquevalues_out)
         if length(pk_colnames) > 1
             populate_primarykey!(primarykey, pk_colnames, outputrow)
-            primarykey_isunique!(issues_out, primarykey, pkvalues_out)
+            pkvalue = join(primarykey)
+            primarykey_isunique!(issues_out, pkvalues_out, pkvalue)
         end
         nconstraints > 0 && test_intrarow_constraints!(issues_out[:intrarow_constraints], tableschema, outputrow)
     end
@@ -139,7 +141,8 @@ function compare_streaming_table(tableschema::TableSchema, input_data_file::Stri
         # Assess input row
         if length(pk_colnames) > 1  # The uniqueness of 1-column primary keys is checked at the column level
             populate_primarykey!(primarykey, pk_colnames, inputrow)
-            primarykey_isunique!(issues_in, primarykey, pkvalues_in)
+            pkvalue = join(primarykey)
+            primarykey_isunique!(issues_in, pkvalues_in, pkvalue)
         end
         assess_row!(colissues_in, outputrow, colname2colschema, uniquevalues_in)
         nconstraints > 0 && test_intrarow_constraints!(issues_in[:intrarow_constraints], tableschema, outputrow)
@@ -147,6 +150,7 @@ function compare_streaming_table(tableschema::TableSchema, input_data_file::Stri
         # Assess output row
         # For speed, avoid testing value_is_valid directly. Instead reuse assessment of input.
         # Testing intra-row constraints is unnecessary because either outputrow hasn't changed or the tests return early due to missingness
+        ischanged = false  # True if at least 1 value in outputrow is changed to missing
         for (colname, colschema) in colname2colschema
             val = outputrow[colname]
             ci  = colissues_out[colname]
@@ -165,19 +169,19 @@ function compare_streaming_table(tableschema::TableSchema, input_data_file::Stri
                     end
                 end
             else  # input value (=output value) is invalid...set to missing and report as missing, not as invalid
+                ischanged = true
                 @inbounds outputrow[colname] = missing
                 if colschema.isrequired
                     ci[:n_missing] += 1
                 end
             end
         end
-        #= TODO:
-          This step is unnecessary if no pk values were set to missing.
-          In this case the pk check has already been done (on the input, which is the same as the output)
-        =#
-        if length(pk_colnames) > 1
-            populate_primarykey!(primarykey, pk_colnames, outputrow)
-            primarykey_isunique!(issues_out, primarykey, pkvalues_out)
+        if length(pk_colnames) > 1  # Single-column primary keys are assessed via columnissues[colname][:n_notunique]
+            if ischanged
+                populate_primarykey!(primarykey, pk_colnames, outputrow)  # Only necessary if outputrow has changed
+                pkvalue = join(primarykey)
+            end
+            primarykey_isunique!(issues_out, pkvalues_out, pkvalue)
         end
 
         # If outdata is full append it to output_data_file
@@ -267,13 +271,12 @@ function populate_primarykey!(primarykey::Vector{String}, pk_colnames::Vector{Sy
     end
 end
 
-"Modified: tableissues, pkvalues."
-function primarykey_isunique!(issues, primarykey, pkvalues)
-    pk = join(primarykey)
-    if in(pk, pkvalues)
+"Modified: Either issues or pkvalues."
+function primarykey_isunique!(issues, pkvalues, pkvalue)
+    if in(pkvalue, pkvalues)  # This pkvalue has already been seen in an earlier row
         issues[:primarykey_duplicates] += 1
     else
-        push!(pkvalues, pk)
+        push!(pkvalues, pkvalue)
     end
 end
 
