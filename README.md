@@ -15,7 +15,7 @@ This package facilitates 3 use cases:
 Although a schema can be specified in code, it is more practical to specify it in a configuration file.
 This has the added benefit of sharing it with non-technical data custodians and researchers,
 providing a common language for discussing data-related issues.
-Indeed the 3 use cases listed above can be carried out without writing any Julia code - just call one of the scripts in the `scripts` directory.
+Indeed the 3 use cases listed above can be carried out without writing any Julia code - just run the `compare` script in the `scripts` directory.
 
 # Usage
 
