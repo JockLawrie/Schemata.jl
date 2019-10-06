@@ -35,9 +35,8 @@ else
 end
 
 # Compare data to schema
-output_data_file, input_issues_file, output_issues_file = Schemata.compare_data_to_schema.set_output_files(input_data_file, "", "", "")
 println("$(now()) Starting comparison.")
-compare(ts, input_data_file; output_data_file=output_data_file, input_issues_file=input_issues_file, output_issues_file=output_issues_file)
+compare(ts, input_data_file)
 println("$(now()) A transformed table has been stored at $(output_data_file).")
 println("$(now()) A table of issues with the input data has been stored at $(input_issues_file).")
 println("$(now()) A table of issues with the output data has been stored at $(output_issues_file).")
