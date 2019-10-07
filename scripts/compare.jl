@@ -37,6 +37,4 @@ end
 # Compare data to schema
 println("$(now()) Starting comparison.")
 compare(ts, input_data_file)
-println("$(now()) A transformed table has been stored at $(output_data_file).")
-println("$(now()) A table of issues with the input data has been stored at $(input_issues_file).")
-println("$(now()) A table of issues with the output data has been stored at $(output_issues_file).")
+println("$(now()) A table of transformed data, input issues and output issues have been stored at $(dirname(input_data_file)).")
