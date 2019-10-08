@@ -33,10 +33,10 @@ There are 2 methods for comparing a table to a schema:
    It examines one row at a time.
    The 3 tables of results (see above) are stored on disk. By default they are stored in the same directory as the input table.
 """
-compare(tableschema::TableSchema, table; sorted_by_primarykey=false) = compare_inmemory_table(tableschema, table, sorted_by_primarykey)
+compare(tableschema::TableSchema, table; sorted_by_primarykey::Bool=false) = compare_inmemory_table(tableschema, table, sorted_by_primarykey)
 
 function compare(tableschema::TableSchema, input_data_file::String;
-                 output_data_file="", input_issues_file="", output_issues_file="", sorted_by_primarykey=false)
+                 output_data_file::String="", input_issues_file::String="", output_issues_file::String="", sorted_by_primarykey::Bool=false)
     !isfile(input_data_file) && error("The input data file does not exist.")
     fname, ext = splitext(input_data_file)
     output_data_file   = output_data_file   == "" ? "$(fname)_transformed.tsv"   : output_data_file
@@ -50,7 +50,7 @@ end
 ################################################################################
 # compare_inmemory_table
 
-function compare_inmemory_table(tableschema::TableSchema, indata, sorted_by_primarykey)
+function compare_inmemory_table(tableschema::TableSchema, indata, sorted_by_primarykey::Bool)
     # Init
     tablename     = tableschema.name
     outdata       = init_outdata(tableschema, size(indata, 1))
@@ -123,7 +123,8 @@ end
 ################################################################################
 # compare_ondisk_table
 
-function compare_ondisk_table(tableschema::TableSchema, input_data_file, output_data_file, input_issues_file, output_issues_file, sorted_by_primarykey)
+function compare_ondisk_table(tableschema::TableSchema, input_data_file::String, output_data_file::String,
+                              input_issues_file::String, output_issues_file::String, sorted_by_primarykey::Bool)
     # Init
     tablename     = tableschema.name
     outdata       = init_outdata(tableschema, input_data_file)
