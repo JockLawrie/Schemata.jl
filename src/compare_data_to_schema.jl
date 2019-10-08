@@ -307,12 +307,15 @@ function assess_row!(columnissues, row, colname2colschema, uniquevalues)
     for (colname, colschema) in colname2colschema
         val = getproperty(row, colname)
         if ismissing(val)
-            assess_missing_value!(columnissues[colname], colschema)
+            !colschema.isrequired && continue  # Checks are done before the function call to avoid unnecessary dict lookups
+            assess_missing_value!(columnissues[colname])
         elseif value_is_valid(val, colschema.validvalues)
-            assess_nonmissing_value!(columnissues[colname], val, colschema, uniquevalues)
+            !colschema.isunique && continue
+            assess_nonmissing_value!(columnissues[colname], val, uniquevalues[colname])
         else
             columnissues[colname][:n_invalid] += 1
-            assess_nonmissing_value!(columnissues[colname], val, colschema, uniquevalues)
+            !colschema.isunique && continue
+            assess_nonmissing_value!(columnissues[colname], val, uniquevalues[colname])
         end
     end
 end
@@ -322,38 +325,35 @@ function assess_row_set_invalid_to_missing!(columnissues, outputrow, colname2col
     for (colname, colschema) in colname2colschema
         val = outputrow[colname]
         if ismissing(val)
-            assess_missing_value!(columnissues[colname], colschema)
+            !colschema.isrequired && continue  # Checks are done before the function call to avoid unnecessary dict lookups
+            assess_missing_value!(columnissues[colname])
         elseif value_is_valid(val, colschema.validvalues)
-            assess_nonmissing_value!(columnissues[colname], val, colschema, uniquevalues)
+            !colschema.isunique && continue
+            assess_nonmissing_value!(columnissues[colname], val, uniquevalues[colname])
         else
             outputrow[colname] = missing
-            assess_missing_value!(columnissues[colname], colschema)
+            !colschema.isrequired && continue
+            assess_missing_value!(columnissues[colname])
         end
     end
 end
 
-function assess_missing_value!(columnissues::Dict{Symbol, Int}, colschema::ColumnSchema)
-    if colschema.isrequired  # Ensure no missing data
-        columnissues[:n_missing] += 1
+assess_missing_value!(columnissues::Dict{Symbol, Int}) = columnissues[:n_missing] += 1  # Ensure no missing data
+
+function assess_nonmissing_value!(columnissues::Dict{Symbol, Int}, value, uniquevalues_colname)
+    if in(value, uniquevalues_colname)  # Ensure unique data
+        columnissues[:n_notunique] += 1
+    else
+        push!(uniquevalues_colname, value)
     end
 end
 
-function assess_nonmissing_value!(columnissues::Dict{Symbol, Int}, value, colschema::ColumnSchema, uniquevalues)
-    if colschema.isunique  # Ensure unique data
-        if in(value, uniquevalues[colschema.name])
-            columnissues[:n_notunique] += 1
-        else
-            push!(uniquevalues[colschema.name], value)
-        end
-    end
+function assess_nonmissing_value!(columnissues::Dict{Symbol, Int}, value::T, uniquevalues_colname) where {T <: CategoricalValue} 
+    assess_nonmissing_value!(columnissues, get(value), uniquevalues_colname)
 end
 
-function assess_nonmissing_value!(columnissues::Dict{Symbol, Int}, value::T, colschema::ColumnSchema, uniquevalues) where {T <: CategoricalValue} 
-    assess_nonmissing_value!(columnissues, get(value), colschema, uniquevalues)
-end
-
-function assess_nonmissing_value!(columnissues::Dict{Symbol, Int}, value::T, colschema::ColumnSchema, uniquevalues) where {T <: CategoricalString} 
-    assess_nonmissing_value!(columnissues, get(value), colschema, uniquevalues)
+function assess_nonmissing_value!(columnissues::Dict{Symbol, Int}, value::T, uniquevalues_colname) where {T <: CategoricalString} 
+    assess_nonmissing_value!(columnissues, get(value), uniquevalues_colname)
 end
 
 """
