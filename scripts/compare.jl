@@ -6,13 +6,12 @@
 
 configfile      = ARGS[1]
 input_data_file = ARGS[2]
+sorted_by_primarykey = isnothing(ARGS[3]) ? false : true
 
 using Pkg
 Pkg.activate(".")
 
-using CSV
 using Dates
-using DataFrames
 using Schemata
 
 # Construct the TableSchema
@@ -36,5 +35,5 @@ end
 
 # Compare data to schema
 println("$(now()) Starting comparison.")
-compare(ts, input_data_file)
+compare(ts, input_data_file; sorted_by_primarykey=sorted_by_primarykey)
 println("$(now()) A table of transformed data, input issues and output issues have been stored at $(dirname(input_data_file)).")
