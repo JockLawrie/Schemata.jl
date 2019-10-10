@@ -379,8 +379,7 @@ function parsevalue(colschema::ColumnSchema, value)
     result = (value isa String) && (parentmodule(datatype) == Core) ? Base.tryparse(datatype, value) : nothing
     !isnothing(result) && return result
     result = tryparse(colschema.parser, value)
-    !isnothing(result) && return result
-    missing
+    isnothing(result) ? missing : result
 end
 
 
