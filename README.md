@@ -84,6 +84,14 @@ compare(ts, input_data_file; output_data_file=output_data_file, input_issues_fil
 compare(ts, input_data_file)  # output_data_file, input_issues_file, output_issues_file have default values
 ```
 
+### A speed-up
+
+If your data is sorted by its primary key, set the keyword argument `sorted_by_primarykey` to `true` (default is `false`).
+That is, use `compare(ts, table; sorted_by_primarykey=true)` or `compare(ts, input_data_file; sorted_by_primarykey=true)`.
+In this case the `compare` function assumes that your input data table is sorted by its primary key (as specified in the schema),
+which allows for a faster comparison between the data and the schema.
+
+
 # Custom Parsers
 
 The `CustomParsers` submodule allows users to provide custom parsers.
