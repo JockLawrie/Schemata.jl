@@ -338,19 +338,51 @@ parsevalue(colschema::ColumnSchema, value::Missing) = missing
 parsevalue(colschema::ColumnSchema, value::CategoricalValue)  = parsevalue(colschema, get(value))
 parsevalue(colschema::ColumnSchema, value::CategoricalString) = parsevalue(colschema, get(value))
 
+
+"""
+Tries to parse value according to the schema.
+Returns missing if parsing is unsuccessful.
+"""
 function parsevalue(colschema::ColumnSchema, value)
-    value == "" && return missing
-    value isa colschema.datatype && return value
-    try
-        parse(colschema.parser, value)
-    catch e
-        try
-            convert(colschema.datatype, value)
-        catch e2
-            missing
+    datatype = colschema.datatype
+
+    # Common specific cases (every line is an early return)
+    value == ""         && return missing
+    value isa datatype  && return value
+    value isa SubString && datatype == String && return String(value)
+    if value isa Integer  # Intxx, UIntxx or Bool
+        if datatype <: Signed      # Intxx
+            value <= typemax(datatype) && return convert(datatype, value)  # Example: convert(Int32, 123)
+            return missing
+        elseif datatype <: Integer # UIntxx or Bool
+            value >= 0 && value <= typemax(datatype) && return convert(datatype, value)  # Example: convert(UInt, 123)
+            return missing
+        elseif datatype <: AbstractFloat
+            value <= typemax(datatype) && return convert(datatype, value)  # Example: convert(Float64, 123)
+            return missing
         end
     end
+    if value isa AbstractFloat
+        if datatype <: Integer
+            value != round(value; digits=0) && return missing  # InexactError
+            value >= 0.0 && value <= typemax(datatype) && return convert(datatype, value)
+            datatype <: Signed && value <= typemax(datatype) && return convert(datatype, value)
+            return missing  # value < 0 and datatype <: Unsigned...not possible
+        elseif datatype <: AbstractFloat
+            value <= typemax(datatype) && return convert(datatype, value)  # Example: convert(Float32, 12.3)
+            return missing
+        end
+    end
+    datatype == Char && value isa String && length(value) == 1 && return value[1]
+
+    # General case
+    result = (value isa String) && (parentmodule(datatype) == Core) ? Base.tryparse(datatype, value) : nothing
+    !isnothing(result) && return result
+    result = tryparse(colschema.parser, value)
+    !isnothing(result) && return result
+    missing
 end
+
 
 "Records issues with the row but doesn't mutate the row."
 function assess_row!(columnissues, row, colname2colschema, uniquevalues)

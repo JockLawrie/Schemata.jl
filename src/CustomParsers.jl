@@ -8,9 +8,9 @@ Calling `parse(parser, value)` returns a value with type `parser.returntype`.
 """
 module CustomParsers
 
-export CustomParser, parse
+export CustomParser, tryparse
 
-import Base.parse
+import Base.tryparse
 
 using Dates
 using Parsers
@@ -24,7 +24,7 @@ struct CustomParser
 
     function CustomParser(func, args, kwargs, returntype)
         func isa DataType && func != returntype && error("CustomParser: func is a DataType that doesn't equal returntype")
-        if returntype == Date && length(args) == 1  # Hack: convert args = [dateformat::String] to args = [DateFormat(dateformat)]...parses faster
+        if returntype == Date && length(args) == 1  # Hack: Convert args from [dateformat::String] to [DateFormat(dateformat)]...parses faster
             args = [DateFormat(args[1])]
         end
         new(func, args, kwargs, returntype)
@@ -40,13 +40,17 @@ end
 
 CustomParser(returntype::DataType) = CustomParser(Dict("returntype" => returntype))
 
-function parse(parser::CustomParser, val)
+function tryparse(parser::CustomParser, val)
     if parser.func == Parsers.parse  # Using Parsers (Core return type: parentmodule(parser.returntype) == Core)
-        isempty(parser.kwargs) && return Parsers.parse(parser.returntype, val)
-        return Parsers.parse(parser.returntype, val, Parsers.Options(parser.kwargs...))
+        isempty(parser.kwargs) && return Parsers.tryparse(parser.returntype, val)  # tryparse returns nothing if parsing was unsuccessful
+        return Parsers.tryparse(parser.returntype, val, Parsers.Options(parser.kwargs...))
     else                             # Using custom parser (Non-Core return type)
-        isempty(parser.kwargs) && return parser.func(val, parser.args...)
-        return parser.func(val, parser.args...; parser.kwargs...)
+        try
+            isempty(parser.kwargs) && return parser.func(val, parser.args...)
+            return parser.func(val, parser.args...; parser.kwargs...)
+        catch e
+            return nothing
+        end
     end
 end
 
