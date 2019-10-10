@@ -45,12 +45,8 @@ function tryparse(parser::CustomParser, val)
         isempty(parser.kwargs) && return Parsers.tryparse(parser.returntype, val)  # tryparse returns nothing if parsing was unsuccessful
         return Parsers.tryparse(parser.returntype, val, Parsers.Options(parser.kwargs...))
     else                             # Using custom parser (Non-Core return type)
-        try
-            isempty(parser.kwargs) && return parser.func(val, parser.args...)
-            return parser.func(val, parser.args...; parser.kwargs...)
-        catch e
-            return nothing
-        end
+        isempty(parser.kwargs) && return parser.func(val, parser.args...)
+        return parser.func(val, parser.args...; parser.kwargs...)
     end
 end
 
