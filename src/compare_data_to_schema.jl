@@ -279,7 +279,7 @@ end
 "Modified: primarykey"
 function populate_primarykey!(primarykey::Vector{Union{String, Missing}}, pk_colnames::Vector{Symbol}, row)
     for (j, colname) in enumerate(pk_colnames)
-        val = getproperty(row, column)
+        val = getproperty(row, colname)
         if ismissing(val)
             @inbounds primarykey[j] = missing
         else
