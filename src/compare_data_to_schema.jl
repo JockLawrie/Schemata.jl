@@ -197,6 +197,7 @@ function compare_ondisk_table(tableschema::TableSchema, input_data_file::String,
             else  # input value (=output value) is invalid...set to missing and report as missing, not as invalid
                 @inbounds outputrow[colname] = missing
                 pk_has_changed = pk_ncols > 1 && !pk_has_changed && in(colname, pk_colnames_set)
+                ci[:n_invalid] += 1
                 if colschema.isrequired
                     ci[:n_missing] += 1
                 end
