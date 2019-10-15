@@ -222,6 +222,9 @@ function compare_ondisk_table(tableschema::TableSchema, input_data_file::String,
     datacols_match_schemacols!(issues_in, tableschema, Set(csvrows.names))  # By construction this issue doesn't exist for outdata
 
     # Format result
+    for (colname, colissues) in issues_out[:columnissues]
+        colissues[:n_invalid] = 0  # Invalid values have been set to missing in the output data (which are then reported as missing rather than invalid)
+    end
     issues_in  = construct_issues_table(issues_in,  tableschema, nr)
     issues_out = construct_issues_table(issues_out, tableschema, nr)
     CSV.write(input_issues_file,  issues_in;  delim=delim_iniss)
