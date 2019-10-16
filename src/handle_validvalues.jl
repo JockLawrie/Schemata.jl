@@ -12,7 +12,6 @@ get_datatype(validvalues::DataType) = validvalues
 get_datatype(validvalues::Set)      = eltype(validvalues)
 get_datatype(validvalues::T) where {T <: AbstractRange} = typeof(validvalues[1])
 
-
 "Returns: True if value is in validvalues"
 value_is_valid(value::T, validvalues::DataType) where {T <: CategoricalValue}  = typeof(get(value)) == validvalues
 value_is_valid(value::T, validvalues::DataType) where {T <: CategoricalString} = typeof(get(value)) == validvalues
@@ -20,7 +19,6 @@ value_is_valid(value::T, validvalues)           where {T <: CategoricalValue}  =
 value_is_valid(value::T, validvalues)           where {T <: CategoricalString} = value_is_valid(get(value), validvalues)
 value_is_valid(value, validvalues::DataType) = typeof(value) == validvalues
 value_is_valid(value, validvalues) = typeof(value) == eltype(validvalues) && in(value, validvalues)
-
 
 """
 Returns: An instance of ColumnSchema.validvalues.
@@ -41,10 +39,10 @@ function parse_validvalues(parser::CustomParser, validvalues::String)
 
     # Range of a Core type
     vals = strip.(String.(split(validvalues, ':')))
-    val1 = parse(parser, vals[1])
-    val2 = parse(parser, vals[2])
+    val1 = tryparse(parser, vals[1])
+    val2 = tryparse(parser, vals[2])
     length(vals) == 2 && return val1:val2       # Step-size not supplied
-    val3 = parse(parser, vals[3])
+    val3 = tryparse(parser, vals[3])
     length(vals) == 3 && return val1:val2:val3  # Step-size supplied
 
     # Else error
@@ -53,7 +51,7 @@ end
 
 
 function parse_validvalues(parser::CustomParser, validvalues::T) where {T <: Vector}
-    eltype(validvalues) == parser.returntype ? validvalues : [parse(parser, x) for x in validvalues]
+    eltype(validvalues) == parser.returntype ? validvalues : [tryparse(parser, x) for x in validvalues]
 end
 
 
@@ -70,9 +68,9 @@ function parse_noncore_range(parser::CustomParser, validvalues::String)
     @assert validvalues[end] == ')'
     validvalues = strip.(String.(split(validvalues[2:(end-1)], ",")))
     length(validvalues) != 3 && error("Range of non-Base type requires 3 elements. It has $(length(validvalues)).")
-    val1 = parse(parser, validvalues[1])
-    val2 = parser.returntype <: Dates.TimeType ? eval(Meta.parse(validvalues[2])) : parse(parser, validvalues[2])
-    val3 = parse(parser, validvalues[3])
+    val1 = tryparse(parser, validvalues[1])
+    val2 = parser.returntype <: Dates.TimeType ? eval(Meta.parse(validvalues[2])) : tryparse(parser, validvalues[2])
+    val3 = tryparse(parser, validvalues[3])
     val1:val2:val3
 end
 
