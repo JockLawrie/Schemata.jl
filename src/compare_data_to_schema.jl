@@ -134,6 +134,7 @@ function compare_ondisk_table(tableschema::TableSchema, input_data_file::String,
     pk_ncols      = length(pk_colnames)
     primarykey    = missings(String, pk_ncols)  # Stringified primary key 
     pkvalues_in   = Set{String}()  # Values of the primary key
+    pk_issues_in  = pk_ncols == 1 ? issues_in[:columnissues][pk_colnames[1]]  : Dict{Symbol, Int}()
     i_outdata     = 0
     nconstraints  = length(tableschema.intrarow_constraints)
     pk_colnames_set   = Set(pk_colnames)
@@ -158,19 +159,28 @@ function compare_ondisk_table(tableschema::TableSchema, input_data_file::String,
         parserow!(outputrow, inputrow, colname2colschema)
 
         # Assess input row
-        if pk_ncols > 1  # The uniqueness of 1-column primary keys is checked at the column level
-            if sorted_by_primarykey
-                if primarykey_is_duplicated!(primarykey, pk_colnames, inputrow)
-                    issues_in[:primarykey_duplicates] += 1
-                end
-            else
-                populate_primarykey!(primarykey, pk_colnames, inputrow)
-                pkvalue = join(primarykey)
-                primarykey_isunique!(issues_in, pkvalues_in, pkvalue)
-            end
+        if pk_ncols == 1
+            pk_n_missing   = pk_issues_in[:n_missing]    # Number of earlier rows (excluding the curent row) with missing primary key
+            pk_n_notunique = pk_issues_in[:n_notunique]  # Number of earlier rows (excluding the curent row) with duplicated primary key
         end
         assess_row!(colissues_in, outputrow, colname2colschema, uniquevalues_in)  # Note: outputrow used because inputrow contains only Strings
         nconstraints > 0 && test_intrarow_constraints!(issues_in[:intrarow_constraints], tableschema, outputrow)
+        if pk_ncols == 1
+            pk_incomplete = pk_issues_in[:n_missing]   > pk_n_missing    # If true then the current inputrow has missing primary key
+            pk_duplicated = pk_issues_in[:n_notunique] > pk_n_notunique  # If true then the current inputrow has duplicated primary key
+        else
+            if sorted_by_primarykey
+                pk_incomplete, pk_duplicated = populate_and_assess_primarykey!(primarykey, pk_colnames, inputrow)
+            else
+                pk_incomplete, pk_duplicated = populate_and_assess_primarykey!(primarykey, pk_colnames, inputrow, pkvalues_in)
+            end
+        end
+        if pk_incomplete
+            issues_in[:primarykey_incomplete] += 1
+        end
+        if pk_duplicated
+            issues_in[:primarykey_duplicates] += 1
+        end
 
         # Assess output row
         # For speed, avoid testing value_is_valid directly. Instead reuse assessment of input.
@@ -197,14 +207,16 @@ function compare_ondisk_table(tableschema::TableSchema, input_data_file::String,
             else  # input value (=output value) is invalid...set to missing and report as missing, not as invalid
                 @inbounds outputrow[colname] = missing
                 pk_has_changed = pk_ncols > 1 && !pk_has_changed && in(colname, pk_colnames_set)
-                ci[:n_invalid] += 1
+                ci[:n_invalid] += 1  # Required for comparison between input and output. Reset to 0 below.
                 if colschema.isrequired
                     ci[:n_missing] += 1
                 end
             end
         end
-        if pk_ncols > 1 && !pk_has_changed  # Single-column primary keys are assessed via columnissues[colname][:n_notunique]
-            issues_out[:primarykey_duplicates] += 1
+        if pk_has_changed || pk_incomplete
+            issues_out[:primarykey_incomplete] += 1
+        elseif pk_duplicated
+            issues_out[:primarykey_duplicates] += 1  # Output pk is valid and equals input pk, which is duplicated (and therefore complete)
         end
 
         # If outdata is full append it to output_data_file
@@ -236,7 +248,8 @@ end
 # Non-API functions
 
 function init_issues(tableschema::TableSchema)
-    result = Dict(:primarykey_duplicates => 0, :intrarow_constraints => Dict{String, Int}(), :data_extra_cols => Symbol[], :data_missing_cols => Symbol[])
+    result = Dict(:primarykey_duplicates => 0, :primarykey_incomplete => 0, :data_extra_cols => Symbol[], :data_missing_cols => Symbol[])
+    result[:intrarow_constraints] = Dict{String, Int}()
     result[:columnissues] = Dict{Symbol, Dict{Symbol, Int}}()
     for (colname, colschema) in tableschema.colname2colschema
         d = Dict(:n_notunique => 0, :n_missing => 0, :n_invalid => 0, :different_datatypes => 0, :data_not_categorical => 0, :data_is_categorical => 0)
@@ -280,51 +293,64 @@ function compare_datatypes!(issues, table, colname2colschema)
     end
 end
 
-"Modified: primarykey"
-function populate_primarykey!(primarykey::Vector{Union{String, Missing}}, pk_colnames::Vector{Symbol}, row)
+"""
+Modified: pk_prev
+
+Returns: pk_incomplete::Bool, pk_duplicated::Bool.
+
+Used when the input data is sorted by its primary key and the primary key has more than 1 column.
+
+Compares the current row's primary key to the previous row's primary key.
+Checks for completeness and duplication.
+After doing the checks, pk_prev is populated with the current row's primary key.
+"""
+function populate_and_assess_primarykey!(pk_prev::Vector{Union{String, Missing}}, pk_colnames::Vector{Symbol}, currentrow)
+    pk_incomplete = false
+    pk_duplicated = true
+    for (j, colname) in enumerate(pk_colnames)
+        val = getproperty(currentrow, colname)
+        if ismissing(val)
+            pk_incomplete = true
+            pk_duplicated = false
+        end
+        @inbounds prev_val = pk_prev[j]
+        if ismissing(prev_val) || val != prev_val
+            pk_duplicated = false
+        end
+        @inbounds pk_prev[j] = val
+    end
+    pk_incomplete, pk_duplicated
+end
+
+"""
+Modified: primarykey and pkvalues (if the row's primary is complete and hasn't been seen in an eariler row).
+
+Returns: pk_incomplete::Bool, pk_duplicated::Bool.
+
+Used when the input data is not sorted by its primary key and the primary key has more than 1 column.
+"""
+function populate_and_assess_primarykey!(primarykey::Vector{Union{String, Missing}}, pk_colnames::Vector{Symbol}, row, pkvalues)
+    pk_incomplete = false
+    pk_duplicated = true
     for (j, colname) in enumerate(pk_colnames)
         val = getproperty(row, colname)
         if ismissing(val)
             @inbounds primarykey[j] = missing
+            pk_incomplete = true
         else
             @inbounds primarykey[j] = string(val)
         end
     end
-end
-
-"""
-Modified: pk_prev
-
-Compares the current row's primary key to the previous row's primary key.
-Returns true if the 2 primary keys are the same.
-Also populates pk_prev with the current row's primary key (after doing the comparison).
-
-- If a value is missing then the comparison returns false (primary key is not duplicated).
-"""
-function primarykey_is_duplicated!(pk_prev::Vector{Union{String, Missing}}, pk_colnames::Vector{Symbol}, currentrow)
-    result = true
-    for (j, colname) in enumerate(pk_colnames)
-        if result == true
-            val = getproperty(currentrow, colname)
-            @inbounds prev_val = pk_prev[j]
-            if ismissing(val) || ismissing(prev_val) || val != pk_prev[j]
-                result = false
-            end
-            @inbounds pk_prev[j] = val
-        else
-            @inbounds pk_prev[j] = getproperty(currentrow, colname)
+    if pk_incomplete
+        pk_duplicated = false
+    else
+        pkvalue = join(primarykey)
+        if !in(pkvalue, pkvalues)  # This pkvalue hasn't already been seen in an earlier row
+            push!(pkvalues, pkvalue)
+            pk_duplicated = false
         end
     end
-    result
-end
-
-"Modified: Either issues or pkvalues."
-function primarykey_isunique!(issues, pkvalues, pkvalue)
-    if in(pkvalue, pkvalues)  # This pkvalue has already been seen in an earlier row
-        issues[:primarykey_duplicates] += 1
-    else
-        push!(pkvalues, pkvalue)
-    end
+    pk_incomplete, pk_duplicated
 end
 
 """
@@ -491,6 +517,11 @@ function construct_issues_table(issues, tableschema, ntotal)
     end
     if !isempty(issues[:data_missing_cols])
         push!(result, (entity="table", id="$(tablename)", issue="The data is missing some columns that the Schema has ($(issues[:data_missing_cols]))."))
+    end
+    if issues[:primarykey_incomplete] > 0
+        num = issues[:primarykey_incomplete]
+        p   = make_pct_presentable(100.0 * num / ntotal)
+        push!(result, (entity="table", id="$(tablename)", issue="$(p)% ($(num)/$(ntotal)) of rows contain missing values in the primary key."))
     end
     if issues[:primarykey_duplicates] > 0
         nd = issues[:primarykey_duplicates]
