@@ -166,7 +166,7 @@ function compare_ondisk_table(tableschema::TableSchema, input_data_file::String,
         if pk_ncols == 1
             pk_incomplete, pk_duplicated = assess_singlecolumn_primarykey!(issues_in, pk_issues_in, pk_n_missing, pk_n_notunique)
         else
-            pk_incomplete, pk_duplicated = assess_multicolumn_primarykey!(issues_in, primarykey, pk_colnames, pkvalues_in, sorted_by_primarykey, inputrow)
+            pk_incomplete, pk_duplicated = assess_multicolumn_primarykey!(issues_in, primarykey, pk_colnames, pkvalues_in, sorted_by_primarykey, outputrow)
         end
 
         # Assess output row
@@ -296,9 +296,9 @@ end
 "Modified: all_issues, primarykey, pkvalues."
 function assess_multicolumn_primarykey!(all_issues, primarykey, pk_colnames, pkvalues, sorted_by_primarykey, row)
     if sorted_by_primarykey
-        pk_incomplete, pk_duplicated = populate_and_assess_primarykey!(primarykey, pk_colnames, row)
+        pk_incomplete, pk_duplicated = populate_and_assess_sorted_primarykey!(primarykey, pk_colnames, row)
     else
-        pk_incomplete, pk_duplicated = populate_and_assess_primarykey!(primarykey, pk_colnames, row, pkvalues)
+        pk_incomplete, pk_duplicated = populate_and_assess_unsorted_primarykey!(primarykey, pk_colnames, row, pkvalues)
     end
     if pk_incomplete
         all_issues[:primarykey_incomplete] += 1
@@ -320,7 +320,7 @@ Compares the current row's primary key to the previous row's primary key.
 Checks for completeness and duplication.
 After doing the checks, pk_prev is populated with the current row's primary key.
 """
-function populate_and_assess_primarykey!(pk_prev::Vector{Union{String, Missing}}, pk_colnames::Vector{Symbol}, currentrow)
+function populate_and_assess_sorted_primarykey!(pk_prev::Vector{Union{String, Missing}}, pk_colnames::Vector{Symbol}, currentrow)
     pk_incomplete = false
     pk_duplicated = true
     for (j, colname) in enumerate(pk_colnames)
@@ -328,6 +328,8 @@ function populate_and_assess_primarykey!(pk_prev::Vector{Union{String, Missing}}
         if ismissing(val)
             pk_incomplete = true
             pk_duplicated = false
+        else
+            val = string(val)
         end
         @inbounds prev_val = pk_prev[j]
         if ismissing(prev_val) || val != prev_val
@@ -345,7 +347,7 @@ Returns: pk_incomplete::Bool, pk_duplicated::Bool.
 
 Used when the input data is not sorted by its primary key and the primary key has more than 1 column.
 """
-function populate_and_assess_primarykey!(primarykey::Vector{Union{String, Missing}}, pk_colnames::Vector{Symbol}, row, pkvalues)
+function populate_and_assess_unsorted_primarykey!(primarykey::Vector{Union{String, Missing}}, pk_colnames::Vector{Symbol}, row, pkvalues)
     pk_incomplete = false
     pk_duplicated = true
     for (j, colname) in enumerate(pk_colnames)
@@ -353,13 +355,12 @@ function populate_and_assess_primarykey!(primarykey::Vector{Union{String, Missin
         if ismissing(val)
             @inbounds primarykey[j] = missing
             pk_incomplete = true
+            pk_duplicated = false
         else
             @inbounds primarykey[j] = string(val)
         end
     end
-    if pk_incomplete
-        pk_duplicated = false
-    else
+    if !pk_incomplete
         pkvalue = join(primarykey)
         if !in(pkvalue, pkvalues)  # This pkvalue hasn't already been seen in an earlier row
             push!(pkvalues, pkvalue)
