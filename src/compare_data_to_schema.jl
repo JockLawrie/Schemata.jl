@@ -61,6 +61,8 @@ function compare_inmemory_table(tableschema::TableSchema, indata, sorted_by_prim
     primarykey    = missings(String, pk_ncols)  # Stringified primary key 
     pkvalues_in   = Set{String}()  # Values of the primary key
     pkvalues_out  = Set{String}()
+    pk_issues_in  = pk_ncols == 1 ? issues_in[:columnissues][pk_colnames[1]]  : Dict{Symbol, Int}()
+    pk_issues_out = pk_ncols == 1 ? issues_out[:columnissues][pk_colnames[1]] : Dict{Symbol, Int}()
     i_outdata     = 0
     nconstraints  = length(tableschema.intrarow_constraints)
     colname2colschema = tableschema.colname2colschema
@@ -75,34 +77,30 @@ function compare_inmemory_table(tableschema::TableSchema, indata, sorted_by_prim
         parserow!(outputrow, inputrow, colname2colschema)
 
         # Assess input row
-        if pk_ncols > 1  # The uniqueness of 1-column primary keys is checked at the column level
-            if sorted_by_primarykey
-                if primarykey_is_duplicated!(primarykey, pk_colnames, inputrow)
-                    issues_in[:primarykey_duplicates] += 1
-                end
-            else
-                populate_primarykey!(primarykey, pk_colnames, inputrow)
-                pkvalue = join(primarykey)
-                primarykey_isunique!(issues_in, pkvalues_in, pkvalue)
-            end
+        if pk_ncols == 1
+            pk_n_missing   = pk_issues_in[:n_missing]    # Number of earlier rows (excluding the curent row) with missing primary key
+            pk_n_notunique = pk_issues_in[:n_notunique]  # Number of earlier rows (excluding the curent row) with duplicated primary key
         end
         assess_row!(issues_in[:columnissues], inputrow, colname2colschema, uniquevalues_in)
         nconstraints > 0 && test_intrarow_constraints!(issues_in[:intrarow_constraints], tableschema, inputrow)
+        if pk_ncols == 1
+            pk_incomplete, pk_duplicated = assess_singlecolumn_primarykey!(issues_in, pk_issues_in, pk_n_missing, pk_n_notunique)
+        else
+            pk_incomplete, pk_duplicated = assess_multicolumn_primarykey!(issues_in, primarykey, pk_colnames, pkvalues_in, sorted_by_primarykey, inputrow)
+        end
 
         # Assess output row
-        assess_row_set_invalid_to_missing!(issues_out[:columnissues], outputrow, colname2colschema, uniquevalues_out)
-        if pk_ncols > 1
-            if sorted_by_primarykey
-                if primarykey_is_duplicated!(primarykey, pk_colnames, outputrow)
-                    issues_out[:primarykey_duplicates] += 1
-                end
-            else
-                populate_primarykey!(primarykey, pk_colnames, outputrow)
-                pkvalue = join(primarykey)
-                primarykey_isunique!(issues_out, pkvalues_out, pkvalue)
-            end
+        if pk_ncols == 1
+            pk_n_missing   = pk_issues_out[:n_missing]    # Number of earlier rows (excluding the curent row) with missing primary key
+            pk_n_notunique = pk_issues_out[:n_notunique]  # Number of earlier rows (excluding the curent row) with duplicated primary key
         end
+        assess_row_set_invalid_to_missing!(issues_out[:columnissues], outputrow, colname2colschema, uniquevalues_out)
         nconstraints > 0 && test_intrarow_constraints!(issues_out[:intrarow_constraints], tableschema, outputrow)
+        if pk_ncols == 1
+            pk_incomplete, pk_duplicated = assess_singlecolumn_primarykey!(issues_out, pk_issues_out, pk_n_missing, pk_n_notunique)
+        else
+            pk_incomplete, pk_duplicated = assess_multicolumn_primarykey!(issues_out, primarykey, pk_colnames, pkvalues_out, sorted_by_primarykey, outputrow)
+        end
     end
 
     # Column-level checks
@@ -166,20 +164,9 @@ function compare_ondisk_table(tableschema::TableSchema, input_data_file::String,
         assess_row!(colissues_in, outputrow, colname2colschema, uniquevalues_in)  # Note: outputrow used because inputrow contains only Strings
         nconstraints > 0 && test_intrarow_constraints!(issues_in[:intrarow_constraints], tableschema, outputrow)
         if pk_ncols == 1
-            pk_incomplete = pk_issues_in[:n_missing]   > pk_n_missing    # If true then the current inputrow has missing primary key
-            pk_duplicated = pk_issues_in[:n_notunique] > pk_n_notunique  # If true then the current inputrow has duplicated primary key
+            pk_incomplete, pk_duplicated = assess_singlecolumn_primarykey!(issues_in, pk_issues_in, pk_n_missing, pk_n_notunique)
         else
-            if sorted_by_primarykey
-                pk_incomplete, pk_duplicated = populate_and_assess_primarykey!(primarykey, pk_colnames, inputrow)
-            else
-                pk_incomplete, pk_duplicated = populate_and_assess_primarykey!(primarykey, pk_colnames, inputrow, pkvalues_in)
-            end
-        end
-        if pk_incomplete
-            issues_in[:primarykey_incomplete] += 1
-        end
-        if pk_duplicated
-            issues_in[:primarykey_duplicates] += 1
+            pk_incomplete, pk_duplicated = assess_multicolumn_primarykey!(issues_in, primarykey, pk_colnames, pkvalues_in, sorted_by_primarykey, inputrow)
         end
 
         # Assess output row
@@ -291,6 +278,35 @@ function compare_datatypes!(issues, table, colname2colschema)
             issues[:columnissues][colname][:data_is_categorical] = 1
         end
     end
+end
+
+"Modified: all_issues."
+function assess_singlecolumn_primarykey!(all_issues, pk_issues, pk_n_missing::Int, pk_n_notunique::Int)
+    pk_incomplete = pk_issues[:n_missing]   > pk_n_missing    # If true then the current inputrow has missing primary key
+    pk_duplicated = pk_issues[:n_notunique] > pk_n_notunique  # If true then the current inputrow has duplicated primary key
+    if pk_incomplete
+        all_issues[:primarykey_incomplete] += 1
+    end
+    if pk_duplicated
+        all_issues[:primarykey_duplicates] += 1
+    end
+    pk_incomplete, pk_duplicated
+end
+
+"Modified: all_issues, primarykey, pkvalues."
+function assess_multicolumn_primarykey!(all_issues, primarykey, pk_colnames, pkvalues, sorted_by_primarykey, row)
+    if sorted_by_primarykey
+        pk_incomplete, pk_duplicated = populate_and_assess_primarykey!(primarykey, pk_colnames, row)
+    else
+        pk_incomplete, pk_duplicated = populate_and_assess_primarykey!(primarykey, pk_colnames, row, pkvalues)
+    end
+    if pk_incomplete
+        all_issues[:primarykey_incomplete] += 1
+    end
+    if pk_duplicated
+        all_issues[:primarykey_duplicates] += 1
+    end
+    pk_incomplete, pk_duplicated
 end
 
 """
