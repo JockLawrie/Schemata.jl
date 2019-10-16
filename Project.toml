@@ -1,7 +1,7 @@
 name = "Schemata"
 uuid = "b4d66a32-c6c0-5461-b6fa-34bb9cecaf85"
 authors = ["Jock Lawrie <jock.lawrie@gmail.com>"]
-version = "2.0.3"
+version = "2.0.4"
 
 [deps]
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
