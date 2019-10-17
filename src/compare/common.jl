@@ -345,10 +345,10 @@ function store_column_issue!(issues, tablename, colname, num, ntotal, msg_suffix
 end
 
 function make_pct_presentable(p)
-    p > 100.0 && return "100"
-    p > 1.0   && return "$(round(Int, p))"
-    p < 0.1   && return "<0.1"
-    "$(round(p; digits=1))"
+    p >= 100.0 && return "100"
+    p >= 1.0   && return "$(round(Int, p))"
+    p >= 0.1   && return "$(round(p; digits=1))"
+    "<0.1"
 end
 
 end
