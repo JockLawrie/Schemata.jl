@@ -4,7 +4,8 @@ Contents: Functions for comparing a table to a schema that are used for more tha
 module common
 
 export assess_singlecolumn_primarykey!, assess_multicolumn_primarykey!,
-       parserow!, assess_row!, assess_missing_value!, assess_nonmissing_value!,
+       parserow!,
+       assess_row!, assess_missing_value!, assess_nonmissing_value!,
        datacols_match_schemacols!, test_intrarow_constraints!,
        init_outdata, init_issues, construct_issues_table
 

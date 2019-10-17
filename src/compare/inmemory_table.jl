@@ -4,7 +4,6 @@ Compare an in-memory table to a table schema.
 module inmemory_table
 
 using DataFrames
-using CategoricalArrays
 using Tables
 
 using ..handle_validvalues

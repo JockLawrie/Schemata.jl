@@ -5,8 +5,6 @@ module ondisk_table
 
 using CSV
 using DataFrames
-using CategoricalArrays
-using Tables
 
 using ..types
 using ..common
