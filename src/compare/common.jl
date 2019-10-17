@@ -119,7 +119,25 @@ end
 """
 Modified: outputrow
 
-Parse inputrow into outputrow according to colschema.datatype
+Parse inputrow into outputrow according to colschema.datatype.
+
+Parsing a value follows these rules (using multiple dispatch for efficiency):
+
+- If colschema.datatype != String and isnothing(colschema.parser), use parse(datatype, row, colname).
+  - Optimized...avoids constructing a String before parsing.
+  - Returns missing if the value is unparseable.
+- If colschema.datatype != String and colschema.parser == Parsers.tryparse, use Parsers.tryparse.
+- If typeof(value) == colschema.datatype, return value.
+- If typeof(value) == Missing, return missing.
+- If value is not a String, use Base.convert.
+- Else use colschema.parser.
+- If value is categorical, parse the label corresponding to the value using the rule above.
+
+TODO:
+Allow several types of colschema.parser:
+- Parsers.parse(::Type{T}, r::CSV.Row2, nm::Symbol) for tables read from disk
+- Parsers.tryparse(::Type{T}, val, opts) for in-memory tables
+- CustomParser with a user-defined function
 """
 function parserow!(outputrow, inputrow, colname2colschema)
     for (colname, colschema) in colname2colschema
@@ -131,7 +149,6 @@ parsevalue(colschema::ColumnSchema, value::Missing) = missing
 parsevalue(colschema::ColumnSchema, value::CategoricalValue)  = parsevalue(colschema, get(value))
 parsevalue(colschema::ColumnSchema, value::CategoricalString) = parsevalue(colschema, get(value))
 
-
 """
 Tries to parse value according to the schema.
 Returns missing if parsing is unsuccessful.
@@ -140,9 +157,10 @@ function parsevalue(colschema::ColumnSchema, value)
     datatype = colschema.datatype
 
     # Common specific cases (every line is an early return)
-    value == ""         && return missing
+    value == "" && datatype == String && return missing
     value isa datatype  && return value
     value isa SubString && datatype == String && return String(value)
+    datatype == Char    && value isa String   && length(value) == 1 && return value[1]
     if value isa Integer  # Intxx, UIntxx or Bool
         if datatype <: Signed      # Intxx
             value <= typemax(datatype) && return convert(datatype, value)  # Example: convert(Int32, 123)
@@ -166,7 +184,6 @@ function parsevalue(colschema::ColumnSchema, value)
             return missing
         end
     end
-    datatype == Char && value isa String && length(value) == 1 && return value[1]
 
     # General case
     result = (value isa String) && (parentmodule(datatype) == Core) ? Base.tryparse(datatype, value) : nothing
