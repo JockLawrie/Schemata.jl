@@ -31,7 +31,7 @@ end
 function ColumnSchema(name, description, datatype, iscategorical, isrequired, isunique, validvalues)
     valueorder  = iscategorical ? validvalues : nothing
     validvalues = validvalues isa Vector ? Set(validvalues) : validvalues
-    parser      = constructparser(Nothing, String[], Dict{Symbol, Any}(), datatype)
+    parser      = constructparser(nothing, nothing, nothing, datatype)
     ColumnSchema(name, description, datatype, iscategorical, isrequired, isunique, validvalues, valueorder, parser)
 end
 
@@ -48,7 +48,7 @@ function ColumnSchema(d::Dict)
         kwargs = haskey(d["parser"], "kwargs") ? Dict{Symbol, Any}(Symbol(k) => v for (k,v) in d["parser"]["kwargs"]) : nothing
         parser = constructparser(func, args, kwargs, datatype)
     else     
-        parser = constructparser(datatype, nothing, nothing, datatype)
+        parser = constructparser(nothing, nothing, nothing, datatype)
     end
     valueorder  = parse_validvalues(parser, datatype, d["validvalues"])
     validvalues = valueorder isa Vector ? Set(valueorder) : valueorder
@@ -73,9 +73,10 @@ function constructparser(func, args, kwargs, returntype)
         end
         return closure
     end
-    isnothing(args)  && isnothing(kwargs)  && return (x) -> try func(x) catch e missing end
-    !isnothing(args) && isnothing(kwargs)  && return (x) -> try func(x, args...) catch e missing end
-    isnothing(args)  && !isnothing(kwargs) && return (x) -> try func(x; kwargs...) catch e missing end
+    !(func isa Function) && error("Parser function does have type Function.")
+    isnothing(args)  && isnothing(kwargs)  && return (x) -> try func(x)                     catch e missing end
+    !isnothing(args) && isnothing(kwargs)  && return (x) -> try func(x, args...)            catch e missing end
+    isnothing(args)  && !isnothing(kwargs) && return (x) -> try func(x; kwargs...)          catch e missing end
     !isnothing(args) && !isnothing(kwargs) && return (x) -> try func(x, args...; kwargs...) catch e missing end
     error("Invalid specification of the parser.")
 end
