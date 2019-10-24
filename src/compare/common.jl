@@ -113,7 +113,7 @@ function populate_and_assess_unsorted_primarykey!(primarykey::Vector{Union{Strin
 end
 
 ################################################################################
-# Converting input values to output values
+# Transforming input values to output values
 
 """
 Modified: outputrow
@@ -127,7 +127,7 @@ function parserow!(outputrow, inputrow, colname2colschema)
 end
 
 "Values that cannot be parsed are set to missing."
-parsevalue(datatype::DataType, parser::Function, value) = typeof(value) == datatype ? value : parser(value)
+parsevalue(datatype::DataType, parser::Function, value) = value isa datatype ? value : parser(value)
 
 parsevalue(datatype::DataType, parser::Function, value::CategoricalValue)  = parsevalue(datatype, parser, get(value))
 parsevalue(datatype::DataType, parser::Function, value::CategoricalString) = parsevalue(datatype, parser, get(value))
@@ -135,21 +135,23 @@ parsevalue(datatype::DataType, parser::Function, value::SubString) = datatype ==
 parsevalue(datatype::DataType, parser::Function, value::Missing)   = missing
 
 function parsevalue(datatype::DataType, parser::Function, value::Integer)
-    typeof(value) == datatype && return value
-    if datatype <: Signed      # Intxx
+    value isa datatype && return value
+    if datatype <: Signed      # Int
         value <= typemax(datatype) && return convert(datatype, value)  # Example: convert(Int32, 123)
         return missing
-    elseif datatype <: Integer # UIntxx or Bool
+    elseif datatype <: Integer # UInt or Bool
         value >= 0 && value <= typemax(datatype) && return convert(datatype, value)  # Example: convert(UInt, 123)
         return missing
     elseif datatype <: AbstractFloat
         value <= typemax(datatype) && return convert(datatype, value)  # Example: convert(Float64, 123)
         return missing
+    else
+        return missing
     end
 end
 
 function parsevalue(datatype::DataType, parser::Function, value::AbstractFloat)
-    typeof(value) == datatype && return value
+    value isa datatype && return value
     if datatype <: Integer
         value != round(value; digits=0) && return missing  # InexactError
         value >= 0.0 && value <= typemax(datatype) && return convert(datatype, value)
@@ -157,6 +159,8 @@ function parsevalue(datatype::DataType, parser::Function, value::AbstractFloat)
         return missing  # value < 0 and datatype <: Unsigned...not possible
     elseif datatype <: AbstractFloat
         value <= typemax(datatype) && return convert(datatype, value)  # Example: convert(Float32, 12.3)
+        return missing
+    else
         return missing
     end
 end
