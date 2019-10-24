@@ -3,10 +3,11 @@ module types
 export ColumnSchema, TableSchema, Schema
 
 using Dates
+using Parsers
 
-using ..CustomParsers
+import Base.parse  # For extending Base.parse to Base.parse(s::ColumnSchema, val)
+
 using ..handle_validvalues
-
 
 mutable struct ColumnSchema
     name::Symbol
@@ -17,7 +18,7 @@ mutable struct ColumnSchema
     isunique::Bool        # Is each value in the column unique?
     validvalues::Union{DataType, <:AbstractRange, <:Set}             # Either the full range of the data type or a user-supplied restriction.
     valueorder::Union{DataType, <:AbstractRange, <:Vector, Nothing}  # If iscategorical, valueorder specifies the ordering of categories. Else nothing.
-    parser::CustomParser  # Specifies how values are parsed to non-base types
+    parser::Function      # f(inputvale) = outputvalue
 
     function ColumnSchema(name, description, datatype, iscategorical, isrequired, isunique, validvalues, valueorder, parser)
         # Ensure eltyp and validvalues are consistent with each other
@@ -30,28 +31,53 @@ end
 function ColumnSchema(name, description, datatype, iscategorical, isrequired, isunique, validvalues)
     valueorder  = iscategorical ? validvalues : nothing
     validvalues = validvalues isa Vector ? Set(validvalues) : validvalues
-    parser      = CustomParser(datatype)
+    parser      = constructparser(Nothing, String[], Dict{Symbol, Any}(), datatype)
     ColumnSchema(name, description, datatype, iscategorical, isrequired, isunique, validvalues, valueorder, parser)
 end
 
 function ColumnSchema(d::Dict)
-    datatype = d["datatype"] isa DataType ? d["datatype"] : eval(Meta.parse(d["datatype"]))
-    if haskey(d, "parser") && !haskey(d["parser"], "returntype")
-        d["parser"]["returntype"] = datatype
-        if d["parser"]["function"] isa String
-            d["parser"]["function"] = eval(Meta.parse(d["parser"]["function"]))
-        end
-    end
     name          = d["name"]
     description   = d["description"]
-    parser        = haskey(d, "parser") ? CustomParser(d["parser"]) : CustomParser(datatype)
+    datatype      = d["datatype"] isa DataType ? d["datatype"] : eval(Meta.parse(d["datatype"]))
     iscategorical = d["iscategorical"]
     isrequired    = d["isrequired"]
     isunique      = d["isunique"]
-    valueorder    = parse_validvalues(parser, d["validvalues"])
-    validvalues   = valueorder isa Vector ? Set(valueorder) : valueorder
-    valueorder    = iscategorical ? valueorder : nothing
+    if haskey(d, "parser")
+        func   = d["parser"]["function"] isa String ? eval(Meta.parse(d["parser"]["function"])) : d["parser"]["function"]
+        args   = haskey(d["parser"], "args") ? d["parser"]["args"] : nothing
+        kwargs = haskey(d["parser"], "kwargs") ? Dict{Symbol, Any}(Symbol(k) => v for (k,v) in d["parser"]["kwargs"]) : nothing
+        parser = constructparser(func, args, kwargs, datatype)
+    else     
+        parser = constructparser(datatype, nothing, nothing, datatype)
+    end
+    valueorder  = parse_validvalues(parser, datatype, d["validvalues"])
+    validvalues = valueorder isa Vector ? Set(valueorder) : valueorder
+    valueorder  = iscategorical ? valueorder : nothing
     ColumnSchema(name, description, datatype, iscategorical, isrequired, isunique, validvalues, valueorder, parser)
+end
+
+function constructparser(func, args, kwargs, returntype)
+    # Special cases
+    if ((func == Date) || (isnothing(func) && returntype == Date)) && !isnothing(args) && length(args) == 1
+        df = DateFormat(args[1])
+        return (x) -> try Date(x, df) catch e missing end
+    end
+
+    # General cases
+    if func isa DataType || isnothing(func)
+        opts = isnothing(kwargs) ? Parsers.Options() : Parsers.Options(kwargs...)
+        function closure(val)
+            len = val isa IO ? 0 : sizeof(val)  # Use default pos=1
+            x, code, vpos, vlen, tlen = Parsers.xparse(returntype, val isa AbstractString ? codeunits(val) : val, 1, len, opts)
+            Parsers.ok(code) ? x : missing
+        end
+        return closure
+    end
+    isnothing(args)  && isnothing(kwargs)  && return (x) -> try func(x) catch e missing end
+    !isnothing(args) && isnothing(kwargs)  && return (x) -> try func(x, args...) catch e missing end
+    isnothing(args)  && !isnothing(kwargs) && return (x) -> try func(x; kwargs...) catch e missing end
+    !isnothing(args) && !isnothing(kwargs) && return (x) -> try func(x, args...; kwargs...) catch e missing end
+    error("Invalid specification of the parser.")
 end
 
 ################################################################################

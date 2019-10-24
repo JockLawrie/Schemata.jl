@@ -2,7 +2,6 @@ module compare_table_to_schema
 
 export compare
 
-using ..CustomParsers
 using ..handle_validvalues
 using ..types
 

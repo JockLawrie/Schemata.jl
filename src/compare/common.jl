@@ -13,7 +13,6 @@ using DataFrames
 using CategoricalArrays
 using Tables
 
-using ..CustomParsers
 using ..handle_validvalues
 using ..types
 
@@ -119,79 +118,48 @@ end
 """
 Modified: outputrow
 
-Parse inputrow into outputrow according to colschema.datatype.
-
-Parsing a value follows these rules (using multiple dispatch for efficiency):
-
-- If colschema.datatype != String and isnothing(colschema.parser), use parse(datatype, row, colname).
-  - Optimized...avoids constructing a String before parsing.
-  - Returns missing if the value is unparseable.
-- If colschema.datatype != String and colschema.parser == Parsers.tryparse, use Parsers.tryparse.
-- If typeof(value) == colschema.datatype, return value.
-- If typeof(value) == Missing, return missing.
-- If value is not a String, use Base.convert.
-- Else use colschema.parser.
-- If value is categorical, parse the label corresponding to the value using the rule above.
-
-TODO:
-Allow several types of colschema.parser:
-- Parsers.parse(::Type{T}, r::CSV.Row2, nm::Symbol) for tables read from disk
-- Parsers.tryparse(::Type{T}, val, opts) for in-memory tables
-- CustomParser with a user-defined function
+Parse inputrow into outputrow according to the colschema.
 """
 function parserow!(outputrow, inputrow, colname2colschema)
     for (colname, colschema) in colname2colschema
-        @inbounds outputrow[colname] = parsevalue(colschema, getproperty(inputrow, colname))
+        @inbounds outputrow[colname] = parsevalue(colschema.datatype, colschema.parser, getproperty(inputrow, colname))
     end
 end
 
-parsevalue(colschema::ColumnSchema, value::Missing) = missing
-parsevalue(colschema::ColumnSchema, value::CategoricalValue)  = parsevalue(colschema, get(value))
-parsevalue(colschema::ColumnSchema, value::CategoricalString) = parsevalue(colschema, get(value))
+"Values that cannot be parsed are set to missing."
+parsevalue(datatype::DataType, parser::Function, value) = typeof(value) == datatype ? value : parser(value)
 
-"""
-Tries to parse value according to the schema.
-Returns missing if parsing is unsuccessful.
-"""
-function parsevalue(colschema::ColumnSchema, value)
-    datatype = colschema.datatype
+parsevalue(datatype::DataType, parser::Function, value::CategoricalValue)  = parsevalue(datatype, parser, get(value))
+parsevalue(datatype::DataType, parser::Function, value::CategoricalString) = parsevalue(datatype, parser, get(value))
+parsevalue(datatype::DataType, parser::Function, value::SubString) = datatype == SubString ? value : parsevalue(datatype, parser, String(value))
+parsevalue(datatype::DataType, parser::Function, value::Missing)   = missing
 
-    # Common specific cases (every line is an early return)
-    value == "" && datatype == String && return missing
-    value isa datatype  && return value
-    value isa SubString && datatype == String && return String(value)
-    datatype == Char    && value isa String   && length(value) == 1 && return value[1]
-    if value isa Integer  # Intxx, UIntxx or Bool
-        if datatype <: Signed      # Intxx
-            value <= typemax(datatype) && return convert(datatype, value)  # Example: convert(Int32, 123)
-            return missing
-        elseif datatype <: Integer # UIntxx or Bool
-            value >= 0 && value <= typemax(datatype) && return convert(datatype, value)  # Example: convert(UInt, 123)
-            return missing
-        elseif datatype <: AbstractFloat
-            value <= typemax(datatype) && return convert(datatype, value)  # Example: convert(Float64, 123)
-            return missing
-        end
+function parsevalue(datatype::DataType, parser::Function, value::Integer)
+    typeof(value) == datatype && return value
+    if datatype <: Signed      # Intxx
+        value <= typemax(datatype) && return convert(datatype, value)  # Example: convert(Int32, 123)
+        return missing
+    elseif datatype <: Integer # UIntxx or Bool
+        value >= 0 && value <= typemax(datatype) && return convert(datatype, value)  # Example: convert(UInt, 123)
+        return missing
+    elseif datatype <: AbstractFloat
+        value <= typemax(datatype) && return convert(datatype, value)  # Example: convert(Float64, 123)
+        return missing
     end
-    if value isa AbstractFloat
-        if datatype <: Integer
-            value != round(value; digits=0) && return missing  # InexactError
-            value >= 0.0 && value <= typemax(datatype) && return convert(datatype, value)
-            datatype <: Signed && value <= typemax(datatype) && return convert(datatype, value)
-            return missing  # value < 0 and datatype <: Unsigned...not possible
-        elseif datatype <: AbstractFloat
-            value <= typemax(datatype) && return convert(datatype, value)  # Example: convert(Float32, 12.3)
-            return missing
-        end
-    end
-
-    # General case
-    result = (value isa String) && (parentmodule(datatype) == Core) ? Base.tryparse(datatype, value) : nothing
-    !isnothing(result) && return result
-    result = tryparse(colschema.parser, value)
-    isnothing(result) ? missing : result
 end
 
+function parsevalue(datatype::DataType, parser::Function, value::AbstractFloat)
+    typeof(value) == datatype && return value
+    if datatype <: Integer
+        value != round(value; digits=0) && return missing  # InexactError
+        value >= 0.0 && value <= typemax(datatype) && return convert(datatype, value)
+        datatype <: Signed && value <= typemax(datatype) && return convert(datatype, value)
+        return missing  # value < 0 and datatype <: Unsigned...not possible
+    elseif datatype <: AbstractFloat
+        value <= typemax(datatype) && return convert(datatype, value)  # Example: convert(Float32, 12.3)
+        return missing
+    end
+end
 
 ################################################################################
 # Cell-level non-compliance issues
