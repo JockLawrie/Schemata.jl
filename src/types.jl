@@ -18,7 +18,7 @@ mutable struct ColumnSchema
     isunique::Bool        # Is each value in the column unique?
     validvalues::Union{DataType, <:AbstractRange, <:Set}             # Either the full range of the data type or a user-supplied restriction.
     valueorder::Union{DataType, <:AbstractRange, <:Vector, Nothing}  # If iscategorical, valueorder specifies the ordering of categories. Else nothing.
-    parser::Function      # f(inputvale) = outputvalue
+    parser::Function      # outputvalue = parser(inputvalue)
 
     function ColumnSchema(name, description, datatype, iscategorical, isrequired, isunique, validvalues, valueorder, parser)
         # Ensure eltyp and validvalues are consistent with each other
