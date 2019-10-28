@@ -92,33 +92,20 @@ In this case the `compare` function assumes that your input data table is sorted
 which allows for a faster comparison between the data and the schema.
 
 
-# Custom Parsers
+# User-defined Parsers
 
-The `CustomParsers` submodule allows users to provide custom parsers.
-This allows users to parse:
-- Values with types that are not in Julia's `Core` module.
-- Values of `Core` types in non-standard ways, such as custom date formats.
-- Values of `Core` types in standard ways with a unified interface.
+Users can provide custom parsers, which enable parsing of values:
+- With types that are not in Julia's `Core` module.
+- Of `Core` types in non-standard ways, such as custom date formats.
+- Of `Core` types in standard ways with a unified interface.
 
-A `CustomParser` has the form:
-
-```julia
-struct CustomParser
-    func::Union{Function, DataType}
-    args::Vector
-    kwargs::Dict
-    returntype::DataType
-end
-```
-
-Calling `parse(myparser, value)` returns a value with type `myparser.returntype`.
-
-A `CustomParser` can be constructed from a `Dict`, and therefore can be specified in a configuration file.
-For example, the following code from the test suite defines a `CustomParser` for a `ZonedDateTime`.
+A user-defined parser can be specified directly or in a `Dict`, and therefore can be specified in a configuration file.
+You can specify positional and/or keyword arguments as required.
+For example, the following code from the test suite defines a user-defined parser for a `ZonedDateTime`.
 Note the specification of a range of non-`Core` types, namely `(startvalue, stepsize, endvalue)`.
 
 ```julia
-# Define custom parser
+# Define user-defined parser
 using TimeZones
 
 function my_zdt_parser(s::T, tz::String) where {T <: AbstractString}
@@ -136,8 +123,8 @@ d = Dict("name"          => "zdt", "description" => "Test custom parser for Time
          "validvalues"   => "(today()-Year(2), Hour(1), today()-Day(1))",  # Ensure that the range has sufficient resolution
          "parser"        => Dict("function" => "my_zdt_parser", "args"=>["Australia/Melbourne"]))
 
-# Need to eval datatype and parser.function in the same scope that they were defined (and before constructing the ColumnSchema).
-# Schemata.jl can't see the datatype and parser.function until it receives them from the current scope.
+# Need to eval datatype and the parser function in the same scope that they were defined (and before constructing the ColumnSchema).
+# Schemata.jl can't see the datatype and parser function until it receives them from the current scope.
 d["datatype"] = eval(Meta.parse(d["datatype"]))
 d["parser"]["function"] = eval(Meta.parse(d["parser"]["function"]))
 
