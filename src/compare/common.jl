@@ -130,7 +130,7 @@ end
 parsevalue(datatype::DataType, parser::Function, value) = value isa datatype ? value : parser(value)
 
 parsevalue(datatype::DataType, parser::Function, value::CategoricalValue)  = parsevalue(datatype, parser, get(value))
-parsevalue(datatype::DataType, parser::Function, value::CategoricalString) = parsevalue(datatype, parser, get(value))
+parsevalue(datatype::DataType, parser::Function, value::CategoricalValue{String, <:Integer}) = parsevalue(datatype, parser, get(value))
 parsevalue(datatype::DataType, parser::Function, value::SubString) = datatype == SubString ? value : parsevalue(datatype, parser, String(value))
 parsevalue(datatype::DataType, parser::Function, value::Missing)   = missing
 
@@ -200,7 +200,7 @@ function assess_nonmissing_value!(columnissues::Dict{Symbol, Int}, value::T, uni
     assess_nonmissing_value!(columnissues, get(value), uniquevalues_colname)
 end
 
-function assess_nonmissing_value!(columnissues::Dict{Symbol, Int}, value::T, uniquevalues_colname) where {T <: CategoricalString} 
+function assess_nonmissing_value!(columnissues::Dict{Symbol, Int}, value::T, uniquevalues_colname) where {T <: CategoricalValue{String, <:Integer}} 
     assess_nonmissing_value!(columnissues, get(value), uniquevalues_colname)
 end
 
@@ -324,7 +324,7 @@ function construct_issues_table(issues, tableschema, ntotal)
         store_column_issue!(result, tablename, colname, d[:n_invalid],   ntotal, "contain invalid values")
     end
     result = DataFrame(result)
-    sort!(result, (:entity, :id, :issue), rev=(true, false, false))
+    sort!(result, [:entity, :id, :issue], rev=(true, false, false))
 end
 
 "Example: 25% (250/1000) of rows contain invalid values."

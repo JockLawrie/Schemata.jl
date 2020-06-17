@@ -1,10 +1,15 @@
 ################################################################################
 ### Construct table and write to disk
 
-data_infile    = "my_test_table_in.csv"
-data_outfile   = "my_test_table_out.csv"
-issues_infile  = "my_test_table_input_issues.tsv"
-issues_outfile = "my_test_table_output_issues.tsv"
+outdir = joinpath(pwd(), "output")
+if !isdir(outdir)
+    mkdir(outdir)
+end
+
+data_infile    = joinpath(outdir, "my_test_table_in1.csv")
+data_outfile   = joinpath(outdir, "my_test_table_out.csv")
+issues_infile  = joinpath(outdir, "my_test_table_input_issues.tsv")
+issues_outfile = joinpath(outdir, "my_test_table_output_issues.tsv")
 
 tbl = DataFrame(
     patientid = [1, 2, 3, 4],
@@ -46,6 +51,7 @@ issues_out = DataFrame(CSV.File(issues_outfile; delim='\t'))
 # Fix input data
 indata = DataFrame(CSV.File(data_infile))
 indata[4, :age] = 44
+data_infile     = joinpath(outdir, "my_test_table_in2.csv")  # Hack: Having some issues opening an existing file on Windows
 CSV.write(data_infile, indata; delim=',')
 compare(ts, data_infile; output_data_file=data_outfile, input_issues_file=issues_infile, output_issues_file=issues_outfile)
 issues_in = DataFrame(CSV.File(issues_infile; delim='\t'))
@@ -60,6 +66,7 @@ function test_row_constraints()
                   patientid = UInt.([1,2,3]),
                   dob=Date.(["1992-10-01", "1988-03-23", "1983-11-18"]),
                   date_of_marriage=[Date("2015-09-13"), missing, Date("1981-11-01")])
+    data_infile = joinpath(outdir, "my_test_table_in3.csv")
     CSV.write(data_infile, indata; delim=',')
     compare(schema.tables[:dates], data_infile; output_data_file=data_outfile, input_issues_file=issues_infile, output_issues_file=issues_outfile)
 end
@@ -70,7 +77,4 @@ issues_in = DataFrame(CSV.File(issues_infile))
 ################################################################################
 # Clean up
 
-rm(data_infile)
-rm(data_outfile)
-rm(issues_infile)
-rm(issues_outfile)
+rm(outdir; recursive=true)
