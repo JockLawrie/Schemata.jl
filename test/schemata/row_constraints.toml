@@ -1,0 +1,12 @@
+name = "constraints"
+description = "Date constraints"
+
+[tables.dates]
+description = "Table with date constraints"
+primarykey  = "patientid"
+intrarow_constraints = {"birth date before marriage date" = "r[:dob] < r[:date_of_marriage]"}
+columns = [
+    {name="patientid", description = "Patient ID", datatype = "UInt", validvalues = "UInt", iscategorical = false, isrequired = true, isunique = true},
+    {name="dob", description = "Date of birth", datatype = "Date", validvalues = "Date", iscategorical = false, isrequired = true, isunique = false},
+    {name="date_of_marriage", description = "Date of marriage", datatype = "Date", validvalues = "Date", iscategorical = false, isrequired = false, isunique = false}
+]

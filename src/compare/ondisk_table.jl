@@ -37,7 +37,7 @@ function compare(tableschema::TableSchema, input_data_file::String, output_data_
     colissues_in  = issues_in[:columnissues]
     colissues_out = issues_out[:columnissues]
     CSV.write(output_data_file, init_outdata(tableschema, 0); delim=delim_outdata)  # Write column headers to disk
-    csvrows = CSV.Rows(input_data_file; reusebuffer=true, use_mmap=true)
+    csvrows = CSV.Rows(input_data_file; reusebuffer=true)
     for inputrow in csvrows
         # Parse inputrow into outputrow according to ColumnSchema
         i_outdata += 1

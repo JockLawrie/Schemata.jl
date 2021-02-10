@@ -3,6 +3,7 @@ Compare an in-memory table to a table schema.
 """
 module inmemory_table
 
+using CategoricalArrays
 using DataFrames
 using Tables
 
@@ -66,7 +67,7 @@ function compare(tableschema::TableSchema, indata, sorted_by_primarykey::Bool)
     # Column-level checks
     for (colname, colschema) in colname2colschema
         !colschema.iscategorical && continue
-        categorical!(outdata, colname)
+        transform!(outdata, colname => categorical, renamecols=false)
     end
     datacols_match_schemacols!(issues_in, tableschema, Set(propertynames(indata)))  # By construction this issue doesn't exist for outdata
     compare_datatypes!(issues_in,  indata,  colname2colschema)

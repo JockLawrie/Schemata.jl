@@ -1,0 +1,12 @@
+name = "fever"
+description = "Fever schema"
+
+[tables.mytable]
+description = "My table"
+primarykey  = "patientid"
+columns = [
+    {name = "patientid", description = "Patient ID", datatype = "UInt", validvalues = "UInt", iscategorical = false, isrequired = true, isunique = true},
+    {name = "age", description = "Age (years)", datatype = "Int", validvalues = "Int", iscategorical = false, isrequired = true, isunique = false},
+    {name = "dose", description = "Dose size", datatype = "String", validvalues = ["small", "medium", "large"], iscategorical = true, isrequired = true, isunique = false},
+    {name = "fever", description = "Had fever", datatype = "Bool", validvalues = "Bool", iscategorical = true, isrequired = true, isunique = false}
+]
