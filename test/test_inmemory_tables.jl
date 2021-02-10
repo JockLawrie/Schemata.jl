@@ -37,7 +37,7 @@ outdata, issues_in, issues_out = compare(ts, tbl)
 @test size(issues_in, 1) == 4
 
 # Modify data to comply with the schema
-categorical!(tbl, [:dose, :fever])  # Ensure :dose and :fever contain categorical data
+transform!(tbl, [:dose, :fever] .=> categorical, renamecols=false)  # Ensure :dose and :fever contain categorical data
 outdata, issues_in, issues_out = compare(ts, tbl)
 @test size(issues_in,  1) == 2
 @test size(issues_out, 1) == 0
@@ -69,10 +69,11 @@ push!(schema.tables[:mytable].columnorder, :zipcode)
 @test schema.tables[:mytable].colname2colschema[:zipcode] == zipcode
 
 # Write the updated schema to disk
-#schemafile = joinpath(dirname(pathof(Schemata)), "..", "test/schemata/fever_updated.yaml")
-#writeschema(schemafile, schema)
-#schema_from_disk = readschema(schemafile)
-#@test schema == schema_from_disk
+schemafile = joinpath(dirname(pathof(Schemata)), "..", "test/schemata/fever_updated.toml")
+writeschema(schemafile, schema)
+schema_from_disk = readschema(schemafile)
+rm(schemafile)
+@test schema == schema_from_disk
 
 # Add a corresponding (non-compliant) column to the data
 tbl[!, :zipcode] = ["11111", "22222", "33333", "NULL"];  # CSV file was supplied with "NULL" values, forcing eltype to be String.
@@ -103,7 +104,7 @@ end
 
 my_zdt_custom_parser(dttm::DateTime, tz::String) = ZonedDateTime(dttm, TimeZone(tz))
 
-# Dict for ColumnSchema constructor, obtained after reading yaml
+# Dict for ColumnSchema constructor, obtained after reading toml
 d = Dict("name"          => "zdt", "description" => "Test custom parser for TimeZones.ZonedDateTime",
          "datatype"      => "ZonedDateTime",
          "iscategorical" => false, "isrequired" => true, "isunique" => true,
@@ -150,7 +151,7 @@ outdata, issues_in, issues_out = compare(ts, tbl);
 ################################################################################
 # Test intra-row constraints
 function test_row_constraints()
-    filename = joinpath(dirname(pathof(Schemata)), "..", "test/schemata/row_constraints.yaml")
+    filename = joinpath(dirname(pathof(Schemata)), "..", "test/schemata/row_constraints.toml")
     schema   = readschema(filename)
     d = DataFrame(
                   patientid = UInt.([1,2,3]),

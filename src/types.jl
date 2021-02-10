@@ -6,6 +6,7 @@ using Dates
 using Parsers
 
 import Base.parse  # For extending Base.parse to Base.parse(s::ColumnSchema, val)
+import Base.==
 
 using ..handle_validvalues
 
@@ -19,20 +20,21 @@ mutable struct ColumnSchema
     validvalues::Union{DataType, <:AbstractRange, <:Set}             # Either the full range of the data type or a user-supplied restriction.
     valueorder::Union{DataType, <:AbstractRange, <:Vector, Nothing}  # If iscategorical, valueorder specifies the ordering of categories. Else nothing.
     parser::Function      # outputvalue = parser(inputvalue)
+    parser_as_supplied::Union{Dict, Nothing}  # Internal use only; for writing the parser to disk in writeschema.
 
-    function ColumnSchema(name, description, datatype, iscategorical, isrequired, isunique, validvalues, valueorder, parser)
+    function ColumnSchema(name, description, datatype, iscategorical, isrequired, isunique, validvalues, valueorder, parser, parser_as_supplied)
         # Ensure eltyp and validvalues are consistent with each other
         tp_validvals = get_datatype(validvalues)
         datatype != tp_validvals && error("Column :$(name). Type of valid values ($(tp_validvals)) does not match that of eltype ($(datatype)).")
-        new(Symbol(name), description, datatype, iscategorical, isrequired, isunique, validvalues, valueorder, parser)
+        new(Symbol(name), description, datatype, iscategorical, isrequired, isunique, validvalues, valueorder, parser, parser_as_supplied)
     end
 end
 
-function ColumnSchema(name, description, datatype, iscategorical, isrequired, isunique, validvalues)
+function ColumnSchema(name, description, datatype, iscategorical, isrequired, isunique, validvalues, parser_as_supplied=nothing)
     valueorder  = iscategorical ? validvalues : nothing
     validvalues = validvalues isa Vector ? Set(validvalues) : validvalues
     parser      = constructparser(nothing, nothing, nothing, datatype)
-    ColumnSchema(name, description, datatype, iscategorical, isrequired, isunique, validvalues, valueorder, parser)
+    ColumnSchema(name, description, datatype, iscategorical, isrequired, isunique, validvalues, valueorder, parser, parser_as_supplied)
 end
 
 function ColumnSchema(d::Dict)
@@ -53,18 +55,21 @@ function ColumnSchema(d::Dict)
     valueorder  = parse_validvalues(parser, datatype, d["validvalues"])
     validvalues = valueorder isa Vector ? Set(valueorder) : valueorder
     valueorder  = iscategorical ? valueorder : nothing
-    ColumnSchema(name, description, datatype, iscategorical, isrequired, isunique, validvalues, valueorder, parser)
+    parser_as_supplied = haskey(d, "parser") ? d["parser"] : nothing
+    ColumnSchema(name, description, datatype, iscategorical, isrequired, isunique, validvalues, valueorder, parser, parser_as_supplied)
 end
 
 function constructparser(func, args, kwargs, returntype)
     # Special cases
-    if ((func == Date) || (isnothing(func) && returntype == Date)) && !isnothing(args) && length(args) == 1
-        df = DateFormat(args[1])
-        return (x) -> try Date(x, df) catch e missing end
+    if (isnothing(func) && returntype === Date) || (!isnothing(func) && func isa DataType && func === Date)
+        if !isnothing(args) && length(args) == 1
+            df = DateFormat(args[1])
+            return (x) -> try Date(x, df) catch e missing end
+        end
     end
 
     # General cases
-    if func isa DataType || isnothing(func)
+    if isnothing(func) || func isa DataType
         opts = isnothing(kwargs) ? Parsers.Options() : Parsers.Options(kwargs...)
         function closure(val)
             len = val isa IO ? 0 : sizeof(val)  # Use default pos=1
@@ -79,6 +84,19 @@ function constructparser(func, args, kwargs, returntype)
     isnothing(args)  && !isnothing(kwargs) && return (x) -> try func(x; kwargs...)          catch e missing end
     !isnothing(args) && !isnothing(kwargs) && return (x) -> try func(x, args...; kwargs...) catch e missing end
     error("Invalid specification of the parser.")
+end
+
+function ==(cs1::ColumnSchema, cs2::ColumnSchema)
+    cs1.name          !== cs2.name          && return false
+    cs1.description   != cs2.description    && return false
+    cs1.datatype      !== cs2.datatype      && return false
+    cs1.iscategorical !== cs2.iscategorical && return false
+    cs1.isrequired    !== cs2.isrequired    && return false
+    cs1.isunique      !== cs2.isunique      && return false
+    cs1.validvalues   != cs2.validvalues    && return false
+    cs1.valueorder    != cs2.valueorder     && return false
+    cs1.parser_as_supplied != cs2.parser_as_supplied && return false
+    true
 end
 
 ################################################################################
@@ -113,23 +131,17 @@ function TableSchema(d::Dict)
     name        = Symbol(d["name"])
     description = d["description"]
     pk          = d["primarykey"]  # String or Vector{String}
-    primarykey  = typeof(pk) == String ? [Symbol(pk)] : [Symbol(colname) for colname in pk]
+    primarykey  = pk isa String ? [Symbol(pk)] : [Symbol(colname) for colname in pk]
     columns     = d["columns"]
     columnorder = fill(Symbol("x"), size(columns, 1))
     colname2colschema = Dict{Symbol, ColumnSchema}()
-    i = 0
-    for colname2schema in columns
-        for (colname, colschema) in colname2schema
-            i += 1
-            columnorder[i]    = Symbol(colname)
-            colschema["name"] = columnorder[i]
-            colname2colschema[columnorder[i]] = ColumnSchema(colschema)
-        end
+    for (i, d2) in enumerate(columns)
+        columnorder[i] = Symbol(d2["name"])
+        colname2colschema[columnorder[i]] = ColumnSchema(d2)
     end
     intrarow_constraints = construct_intrarow_constraints(d)
     TableSchema(name, description, colname2colschema, columnorder, primarykey, intrarow_constraints)
 end
-
 
 function construct_intrarow_constraints(d::Dict)
     !haskey(d, "intrarow_constraints") && return Tuple{String, Function}[]
@@ -146,6 +158,33 @@ function construct_intrarow_constraints(d::Dict)
     result
 end
 
+function ==(ts1::TableSchema, ts2::TableSchema)
+    ts1.name !== ts2.name && return false
+    ts1.description != ts2.description && return false
+    length(ts1.colname2colschema) != length(ts2.colname2colschema) && return false
+    for (colname1, colschema1) in ts1.colname2colschema
+        !haskey(ts2.colname2colschema, colname1) && return false
+        colschema2 = ts2.colname2colschema[colname1]
+        colschema1 != colschema2 && return false
+    end
+    length(ts1.columnorder) != length(ts2.columnorder) && return false
+    for (i, colname1) in enumerate(ts1.columnorder)
+        colname2 = ts2.columnorder[i]
+        colname1 !== colname2 && return false
+    end
+    length(ts1.primarykey) != length(ts2.primarykey) && return false
+    for (i, colname1) in enumerate(ts1.primarykey)
+        colname2 = ts2.primarykey[i]
+        colname1 !== colname2 && return false
+    end
+    length(ts1.intrarow_constraints) != length(ts2.intrarow_constraints) && return false
+    for (i, cname_func1) in enumerate(ts1.intrarow_constraints)
+        cname_func2 = ts2.intrarow_constraints[i]
+        cname_func1[1] != cname_func2[1] && return false
+        cname_func1[2] != cname_func2[2] && return false
+    end
+    true
+end
 
 ################################################################################
 struct Schema
@@ -167,6 +206,18 @@ function Schema(d::Dict)
         tables[Symbol(tblname)] = TableSchema(tblschema)
     end
     Schema(name, description, tables)
+end
+
+function ==(s1::Schema, s2::Schema)
+    s1.name !== s2.name && return false
+    s1.description != s2.description && return false
+    length(s1.tables) != length(s2.tables) && return false
+    for (tablename1, tableschema1) in s1.tables
+        !haskey(s2.tables, tablename1) && return false
+        tableschema2 = s2.tables[tablename1]
+        tableschema1 != tableschema2 && return false
+    end
+    true
 end
 
 end

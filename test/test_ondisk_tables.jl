@@ -60,7 +60,7 @@ issues_in = DataFrame(CSV.File(issues_infile; delim='\t'))
 ################################################################################
 # Test intra-row constraints
 function test_row_constraints()
-    filename = joinpath(dirname(pathof(Schemata)), "..", "test/schemata/row_constraints.yaml")
+    filename = joinpath(dirname(pathof(Schemata)), "..", "test/schemata/row_constraints.toml")
     schema   = readschema(filename)
     indata   = DataFrame(
                   patientid = UInt.([1,2,3]),

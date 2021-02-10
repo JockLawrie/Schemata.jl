@@ -6,7 +6,7 @@ It exists independently of any particular data set, and therefore can be constru
 
 This package facilitates 3 use cases:
 
-1. Read/write a schema from/to a yaml file.
+1. Read/write a schema from/to a [TOML](https://toml.io/en/v1.0.0) file.
 
 2. Compare a data set to a schema and list the non-compliance issues.
 
@@ -19,28 +19,29 @@ Indeed the 3 use cases listed above can be carried out without writing any Julia
 
 # Usage
 
-A `TableSchema` looks like this `yaml` file:
+A `TableSchema` looks like this `TOML` file:
 
-```YAML
-name: mytable
-description: "My table"
-primarykey: patientid  # A column name or a vector of column names
-columns:
-  - patientid: {description: Patient ID,  datatype: UInt,   iscategorical: false, isrequired: true, isunique: true,  validvalues: UInt}
-  - age:       {description: Age (years), datatype: Int,    iscategorical: false, isrequired: true, isunique: false, validvalues: "0:120"}
-  - dose:      {description: Dose size,   datatype: String, iscategorical: true,  isrequired: true, isunique: false, 
-                validvalues: ["small", "medium", "large"]
-  - fever:     {description: Had fever,   datatype: Bool,   iscategorical: true,  isrequired: true, isunique: false, validvalues: Bool}
+```toml
+name = "mytable"
+description = "My table"
+primarykey = "patientid"  # A column name or a vector of column names
+columns = [
+    {name = "patientid", description = "Patient ID", datatype = "UInt", validvalues = "UInt", iscategorical = false, isrequired = true, isunique = true},
+    {name = "age", description = "Age (years)", datatype = "Int", validvalues = "Int", iscategorical = false, isrequired = true, isunique = false},
+    {name = "dose", description = "Dose size", datatype = "String", validvalues = ["small", "medium", "large"], iscategorical = true, isrequired = true, isunique = false},
+    {name = "fever", description = "Had fever", datatype = "Bool", validvalues = "Bool", iscategorical = true, isrequired = true, isunique = false}
+]
 ```
 
 A `Schema` contains 1 or more `TableSchema`. For example:
 
-```YAML
-name: fever
-description: "Fever schema"
-tables:
-  table1: *table1_schema
-  table2: *table2_schema
+```TOML
+name = "fever"
+description = "Fever schema"
+
+[tables]
+table1 = "table1_schema"
+table2 = "table2_schema"
 ```
 
 For tables that fit into memory, usage is as follows:
@@ -49,7 +50,7 @@ For tables that fit into memory, usage is as follows:
 # Read in a schema
 using Schemata
 
-schema = readschema(joinpath(dirname(pathof(Schemata)), "..", "test/schemata/fever.yaml"))
+schema = readschema(joinpath(dirname(pathof(Schemata)), "..", "test/schemata/fever.toml"))
 ts     = schema.tables[:mytable]  # TableSchema for mytable
 
 # Construct/import a table (any object that satisfies the Tables.jl interface)
@@ -152,16 +153,16 @@ We often want to ensure that certain relationships hold between variables within
 For example, we might require that a person's marriage date is after his/her birth date.
 We can achieve this by specifying one or more intra-row constraints in a `TableSchema` as follows:
 
-```yaml
-name: intrarow_constraints_demo
-description: "Table with intra-row constraints"
-primarykey: id
-intrarow_constraints:
-  birth date before marriage date: "r[:dob] < r[:date_of_marriage]"
-columns:
-  - id:  {description: ID, datatype: UInt, iscategorical: false, isrequired: true, isunique: true, validvalues: UInt}
-  - dob: {description: Date of birth, datatype: Date, iscategorical: false, isrequired: true, isunique: false, validvalues: Date}
-  - date_of_marriage: {description: Date of marriage, datatype: Date, iscategorical: false, isrequired: false, isunique: false, validvalues: Date}
+```toml
+name = "intrarow_constraints_demo"
+description = "Table with intra-row constraints"
+primarykey  = "patientid"
+intrarow_constraints = {"birth date before marriage date" = "r[:dob] < r[:date_of_marriage]"}
+columns = [
+    {name="patientid", description = "Patient ID", datatype = "UInt", validvalues = "UInt", iscategorical = false, isrequired = true, isunique = true},
+    {name="dob", description = "Date of birth", datatype = "Date", validvalues = "Date", iscategorical = false, isrequired = true, isunique = false},
+    {name="date_of_marriage", description = "Date of marriage", datatype = "Date", validvalues = "Date", iscategorical = false, isrequired = false, isunique = false}
+]
 ```
 
 Each constraint is specified as a key-value pair, where the key is a description of the constraint and

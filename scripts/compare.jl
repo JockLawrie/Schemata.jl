@@ -1,7 +1,7 @@
 #=
   Run this script as follows:
   $ cd /path/to/Schemata.jl
-  $ /path/to/julia scripts/compare.jl /path/to/config.yaml /path/to/inputdata sorted_by_primarykey
+  $ /path/to/julia scripts/compare.jl /path/to/config.toml /path/to/inputdata sorted_by_primarykey
   The 3rd argument, sorted_by_primarykey is either "true" or "false".
   If "true" the compare function assumes that your table is sorted by its primary key,
   which enables a faster comparison to the schema to be made.

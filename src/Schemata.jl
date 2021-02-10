@@ -2,7 +2,7 @@ module Schemata
 
 export Schema, TableSchema, ColumnSchema, # types
        compare,                           # core function
-       readschema                         # read schema from config file
+       readschema, writeschema            # read/write schema from/to config file
 
 include("handle_validvalues.jl")
 include("types.jl")
