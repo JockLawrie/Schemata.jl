@@ -117,7 +117,7 @@ end
 
 my_zdt_parser(dttm::DateTime, tz::String) = ZonedDateTime(dttm, TimeZone(tz))
 
-# Dict for ColumnSchema constructor, obtained after reading yaml
+# Dict for ColumnSchema constructor, obtained after reading toml
 d = Dict("name"          => "zdt", "description" => "Test custom parser for TimeZones.ZonedDateTime",
          "datatype"      => "ZonedDateTime",
          "iscategorical" => false, "isrequired" => true, "isunique" => true,
