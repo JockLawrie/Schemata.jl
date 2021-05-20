@@ -9,6 +9,7 @@ export assess_singlecolumn_primarykey!, assess_multicolumn_primarykey!,
        datacols_match_schemacols!, test_intrarow_constraints!,
        init_outdata, init_issues, construct_issues_table
 
+using DataAPI
 using DataFrames
 using CategoricalArrays
 using Tables
@@ -129,8 +130,8 @@ end
 "Values that cannot be parsed are set to missing."
 parsevalue(datatype::DataType, parser::Function, value) = value isa datatype ? value : parser(value)
 
-parsevalue(datatype::DataType, parser::Function, value::CategoricalValue)  = parsevalue(datatype, parser, get(value))
-parsevalue(datatype::DataType, parser::Function, value::CategoricalValue{String, <:Integer}) = parsevalue(datatype, parser, get(value))
+parsevalue(datatype::DataType, parser::Function, value::CategoricalValue)  = parsevalue(datatype, parser, DataAPI.unwrap(value))
+parsevalue(datatype::DataType, parser::Function, value::CategoricalValue{String, <:Integer}) = parsevalue(datatype, parser, DataAPI.unwrap(value))
 parsevalue(datatype::DataType, parser::Function, value::SubString) = datatype == SubString ? value : parsevalue(datatype, parser, String(value))
 parsevalue(datatype::DataType, parser::Function, value::Missing)   = missing
 

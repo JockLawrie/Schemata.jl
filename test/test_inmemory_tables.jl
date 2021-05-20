@@ -37,7 +37,8 @@ outdata, issues_in, issues_out = compare(ts, tbl)
 @test size(issues_in, 1) == 4
 
 # Modify data to comply with the schema
-transform!(tbl, [:dose, :fever] .=> categorical, renamecols=false)  # Ensure :dose and :fever contain categorical data
+tbl[!, :dose]  = categorical(tbl.dose)
+tbl[!, :fever] = categorical(tbl.fever)
 outdata, issues_in, issues_out = compare(ts, tbl)
 @test size(issues_in,  1) == 2
 @test size(issues_out, 1) == 0

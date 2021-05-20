@@ -1,6 +1,7 @@
 using Test
 using Schemata
 
+using CategoricalArrays
 using CSV
 using DataFrames
 using Dates

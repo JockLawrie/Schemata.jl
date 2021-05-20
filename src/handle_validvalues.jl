@@ -3,6 +3,7 @@ module handle_validvalues
 export parse_validvalues, get_datatype, value_is_valid
 
 using CategoricalArrays
+using DataAPI
 using Dates
 
 "Returns: The type of each valid value (after validvalues has been parsed)."
@@ -11,10 +12,10 @@ get_datatype(validvalues::Set)      = eltype(validvalues)
 get_datatype(validvalues::T) where {T <: AbstractRange} = typeof(validvalues[1])
 
 "Returns: True if value is in validvalues"
-value_is_valid(value::T, validvalues::DataType) where {T <: CategoricalValue} = typeof(get(value)) == validvalues
-value_is_valid(value::T, validvalues::DataType) where {T <: CategoricalValue{String, <:Integer}} = typeof(get(value)) == validvalues
-value_is_valid(value::T, validvalues)           where {T <: CategoricalValue} = value_is_valid(get(value), validvalues)
-value_is_valid(value::T, validvalues)           where {T <: CategoricalValue{String, <:Integer}} = value_is_valid(get(value), validvalues)
+value_is_valid(value::T, validvalues::DataType) where {T <: CategoricalValue} = typeof(DataAPI.unwrap(value)) == validvalues
+value_is_valid(value::T, validvalues::DataType) where {T <: CategoricalValue{String, <:Integer}} = typeof(DataAPI.unwrap(value)) == validvalues
+value_is_valid(value::T, validvalues)           where {T <: CategoricalValue} = value_is_valid(DataAPI.unwrap(value), validvalues)
+value_is_valid(value::T, validvalues)           where {T <: CategoricalValue{String, <:Integer}} = value_is_valid(DataAPI.unwrap(value), validvalues)
 value_is_valid(value, validvalues::DataType) = typeof(value) == validvalues
 value_is_valid(value, validvalues) = typeof(value) == eltype(validvalues) && in(value, validvalues)
 
