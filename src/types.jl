@@ -73,8 +73,8 @@ function constructparser(func, args, kwargs, returntype)
         opts = isnothing(kwargs) ? Parsers.Options() : Parsers.Options(kwargs...)
         function closure(val)
             len = val isa IO ? 0 : sizeof(val)  # Use default pos=1
-            x, code, vpos, vlen, tlen = Parsers.xparse(returntype, val isa AbstractString ? codeunits(val) : val, 1, len, opts)
-            Parsers.ok(code) ? x : missing
+            res = Parsers.xparse(returntype, val isa AbstractString ? codeunits(val) : val, 1, len, opts)
+            Parsers.ok(res.code) ? res.val : missing
         end
         return closure
     end
