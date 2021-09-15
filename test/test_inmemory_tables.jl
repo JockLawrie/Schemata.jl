@@ -106,9 +106,12 @@ end
 my_zdt_custom_parser(dttm::DateTime, tz::String) = ZonedDateTime(dttm, TimeZone(tz))
 
 # Dict for ColumnSchema constructor, obtained after reading toml
-d = Dict("name"          => "zdt", "description" => "Test custom parser for TimeZones.ZonedDateTime",
+d = Dict("name"          => "zdt",
+         "description"   => "Test custom parser for TimeZones.ZonedDateTime",
          "datatype"      => "ZonedDateTime",
-         "iscategorical" => false, "isrequired" => true, "isunique" => true,
+         "iscategorical" => false,
+         "isrequired"    => true,
+         "isunique"      => true,
          "validvalues"   => "(today()-Year(2), Hour(1), today()-Day(1))",  # Ensure that the range has sufficient resolution
          "parser"        => Dict("function" => "my_zdt_custom_parser", "args"=>["Australia/Melbourne"]))
 

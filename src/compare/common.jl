@@ -128,12 +128,12 @@ function parserow!(outputrow, inputrow, colname2colschema)
 end
 
 "Values that cannot be parsed are set to missing."
-parsevalue(datatype::DataType, parser::Function, value) = value isa datatype ? value : parser(value)
-
-parsevalue(datatype::DataType, parser::Function, value::CategoricalValue)  = parsevalue(datatype, parser, DataAPI.unwrap(value))
+parsevalue(datatype::DataType, parser::Function, value) = value isa datatype ? value : parser(value)  # Default method
+parsevalue(datatype::DataType, parser::Function, value::Missing)          = missing
+parsevalue(datatype::DataType, parser::Function, value::String)           = value isa datatype ? value : parser(value)
+parsevalue(datatype::DataType, parser::Function, value::AbstractString)   = parsevalue(datatype, parser, String(value))
+parsevalue(datatype::DataType, parser::Function, value::CategoricalValue) = parsevalue(datatype, parser, DataAPI.unwrap(value))
 parsevalue(datatype::DataType, parser::Function, value::CategoricalValue{String, <:Integer}) = parsevalue(datatype, parser, DataAPI.unwrap(value))
-parsevalue(datatype::DataType, parser::Function, value::SubString) = datatype == SubString ? value : parsevalue(datatype, parser, String(value))
-parsevalue(datatype::DataType, parser::Function, value::Missing)   = missing
 
 function parsevalue(datatype::DataType, parser::Function, value::Integer)
     value isa datatype && return value
